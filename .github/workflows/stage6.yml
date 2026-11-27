@@ -1,5 +1,6 @@
 name: Stage 6 local reminders
 on:
+  workflow_dispatch:
   push:
     paths-ignore: ['Scripts/stage5/WidgetUITests.swift']
     branches: [ci/ios-reminders-stage6, ci/ios-ui-stage7, codex/ios-simulator-validation]
@@ -13,6 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         test: [testDenied, testScheduleReplaceCancel, testCreateAndCompleteTask, testCalendarPrivacy, testStageSevenNavigation]
+        profile: [baseline]
+        include:
+          - test: testStageSevenNavigation
+            profile: oldest-compact
+          - test: testStageSevenNavigation
+            profile: latest-large
     steps:
       - uses: actions/checkout@v4
       - name: Validate core and content
@@ -22,6 +29,8 @@ jobs:
           swift test 2>&1 | tee core-tests.log
           python3 Scripts/validate_content.py
       - name: Prepare fresh iPhone
+        env:
+          PROFILE: ${{ matrix.profile }}
         run: |
           gem list -i xcodeproj || gem install xcodeproj --user-install --no-document
           ruby Scripts/stage5/prepare.rb reminders
@@ -33,7 +42,7 @@ jobs:
           xcrun simctl list devicetypes -j > evidence/device-types.json
           xcodebuild -showsdks > evidence/sdks.txt
           xcrun simctl list runtimes -j > evidence/runtimes.json
-          device=$(python3 Scripts/select_simulator.py evidence/devices.json evidence/destination.json)
+          device=$(python3 Scripts/select_simulator.py evidence/devices.json evidence/destination.json --profile "$PROFILE")
           cat evidence/destination.json
           echo "DEVICE=$device" >> "$GITHUB_ENV"
           if ! python3 -c 'import json, sys; sys.exit(json.load(open("evidence/destination.json"))["state"] != "Booted")'; then
@@ -60,7 +69,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: reminder-${{ matrix.test }}
+          name: reminder-${{ matrix.test }}-${{ matrix.profile }}
           path: |
             evidence/
             Calendar.xcresult

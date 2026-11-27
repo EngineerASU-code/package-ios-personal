@@ -1,11 +1,12 @@
 """Select an available iPhone from simctl JSON and record the actual destination."""
 import json
+import argparse
 from pathlib import Path
 import re
 import sys
 
 
-def select(devices):
+def select(devices, profile="baseline"):
     candidates = []
     for runtime, entries in devices.items():
         match = re.fullmatch(r"com\.apple\.CoreSimulator\.SimRuntime\.iOS-([0-9]+(?:-[0-9]+)*)", runtime)
@@ -20,7 +21,14 @@ def select(devices):
             ):
                 continue
             baseline = device["name"] == "iPhone 16" and version[:2] == (18, 5)
-            candidates.append(((baseline, version, device["name"] == "iPhone 16", device["name"], device["udid"]),
+            name = device["name"]
+            if profile == "oldest-compact":
+                rank = (tuple(-n for n in version), "SE" in name or "mini" in name, "Max" not in name and "Plus" not in name)
+            elif profile == "latest-large":
+                rank = (version, "Max" in name or "Plus" in name)
+            else:
+                rank = (baseline, version, name == "iPhone 16")
+            candidates.append(((*rank, name, device["udid"]),
                                {"runtime": runtime, "name": device["name"], "udid": device["udid"],
                                 "state": device["state"]}))
     if not candidates:
@@ -29,6 +37,11 @@ def select(devices):
 
 
 if __name__ == "__main__":
-    destination = select(json.loads(Path(sys.argv[1]).read_text())["devices"])
-    Path(sys.argv[2]).write_text(json.dumps(destination, indent=2) + "\n")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("inventory", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--profile", choices=("baseline", "oldest-compact", "latest-large"), default="baseline")
+    args = parser.parse_args()
+    destination = select(json.loads(args.inventory.read_text())["devices"], args.profile)
+    args.output.write_text(json.dumps(destination, indent=2) + "\n")
     print(destination["udid"])

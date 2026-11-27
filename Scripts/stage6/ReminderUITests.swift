@@ -106,6 +106,8 @@ final class ReminderUITests: XCTestCase {
             capture("Мао Мао " + name)
         }
         app.buttons["Портрет"].tap()
+        app.buttons["Выбрать"].tap()
+        XCTAssertTrue(app.buttons["Выбран"].waitForExistence(timeout: 8))
         tabs.buttons["Компаньон"].tap()
         XCTAssertTrue(app.buttons["Портрет"].isSelected)
         capture("Портрет")
@@ -120,9 +122,13 @@ final class ReminderUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Мой Компаньон"].waitForExistence(timeout: 8))
         XCTAssertFalse(skipWelcome.exists)
         capture("Компаньон крупный текст")
-        let heroScene = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Сатору Годжо")).firstMatch
-        XCTAssertTrue(heroScene.exists)
-        XCTAssertFalse(heroScene.label.isEmpty)
+        let heroScene = app.buttons["companion-interaction"]
+        let restored = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND label CONTAINS %@", "Мао Мао"),
+            object: heroScene
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 8), .completed)
+        XCTAssertTrue(app.buttons["Чиби"].isSelected)
 
     }
 

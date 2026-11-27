@@ -30,7 +30,18 @@ jobs:
           lipo -verify_arch arm64 "$app/MyCompanion"
           ditto -c -k --keepParent "$app" MyCompanion-Appetize.zip
           unzip -tq MyCompanion-Appetize.zip
+      - name: Check eligibility to share the simulator package
+        id: package-rights
+        if: github.event.repository.private == false
+        run: |
+          app=build/Build/Products/Debug-iphonesimulator/MyCompanion.app
+          if python3 Scripts/check_release_rights.py "$app/Characters" && python3 Scripts/check_release_rights.py "$app/PlugIns/CompanionWidget.appex/Characters"; then
+            echo 'cleared=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Simulator package passed packaging checks. Public download awaits asset clearance.' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/upload-artifact@v4
+        if: github.event.repository.private || steps.package-rights.outputs.cleared == 'true'
         with:
           name: MyCompanion-Appetize
           path: MyCompanion-Appetize.zip
