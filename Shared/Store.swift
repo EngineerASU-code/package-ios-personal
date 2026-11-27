@@ -5,9 +5,15 @@ enum StoreError: Error { case unavailable, database, unsupportedVersion }
 
 struct Store {
     let url: URL
+    #if STAGE5_WIDGET_TESTS
+    private static let databaseName = "stage5-\(UUID().uuidString).sqlite"
+    #else
+    private static let databaseName = "companion.sqlite"
+    #endif
+
     static func shared() throws -> Store {
         guard let directory = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.local.mycompanion") else { throw StoreError.unavailable }
-        return Store(url: directory.appendingPathComponent("companion.sqlite"))
+        return Store(url: directory.appendingPathComponent(databaseName))
     }
 
     private func withDB<T>(writing: Bool, _ body: (OpaquePointer) throws -> T) throws -> T {

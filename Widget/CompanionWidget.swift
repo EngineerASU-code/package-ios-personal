@@ -185,7 +185,10 @@ struct WidgetScene: View {
     }
 }
 
-@main struct CompanionWidget: Widget {
+#if !STAGE5_WIDGET_TESTS
+@main
+#endif
+struct CompanionWidget: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "Companion", intent: Settings.self, provider: Provider()) { entry in
             WidgetScene(entry: entry)
