@@ -12,6 +12,7 @@ final class WidgetUITests: XCTestCase {
         let hero = app.buttons["Мао Мао"]
         XCTAssertTrue(hero.waitForExistence(timeout: 5))
         hero.tap()
+        capture("app-state")
         XCUIDevice.shared.press(.home)
         let icon = home.icons["Мой Компаньон"]
         XCTAssertTrue(icon.waitForExistence(timeout: 10))
@@ -22,17 +23,19 @@ final class WidgetUITests: XCTestCase {
         let add = home.buttons.matching(NSPredicate(format: "label IN %@", ["Add Widget", "Add Widgets", "Add"])).firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 5))
         add.tap()
-        let search = home.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        search.tap()
-        UIPasteboard.general.string = "Мой Компаньон"
-        search.press(forDuration: 1)
-        if home.buttons["Paste"].waitForExistence(timeout: 2) { home.buttons["Paste"].tap() } else { search.typeText("Мой Компаньон") }
-        let result = home.staticTexts["Мой Компаньон"].firstMatch
-        XCTAssertTrue(result.waitForExistence(timeout: 10))
+        let result = home.cells["Мой Компаньон"].firstMatch
+        for _ in 0..<8 {
+            if result.exists && result.isHittable { break }
+            home.swipeUp()
+        }
+        XCTAssertTrue(result.isHittable)
         result.tap()
-        home.swipeLeft()
-        home.buttons["Add Widget"].firstMatch.tap()
+        let install = home.buttons["Add Widget"].firstMatch
+        XCTAssertTrue(install.waitForExistence(timeout: 10))
+        let center = home.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.49))
+        center.press(forDuration: 0.1, thenDragTo: home.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.49)))
+        capture("gallery-medium")
+        install.tap()
         let done = home.buttons["Done"]
         if done.waitForExistence(timeout: 3) { done.tap() }
 
@@ -49,6 +52,7 @@ final class WidgetUITests: XCTestCase {
         app.activate()
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Обычный")).firstMatch.tap()
         app.buttons["Безопасный"].tap()
+        capture("app-state")
         XCUIDevice.shared.press(.home)
         let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: reaction)
         XCTAssertEqual(XCTWaiter.wait(for: [disabled], timeout: 15), .completed)
