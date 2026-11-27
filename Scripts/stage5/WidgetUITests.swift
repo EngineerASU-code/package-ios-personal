@@ -100,6 +100,12 @@ final class WidgetUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         let firstIcon = home.icons["Мой Компаньон"].firstMatch
         XCTAssertTrue(firstIcon.waitForExistence(timeout: 10))
+        if firstIcon.frame.width > 210 {
+            firstIcon.press(forDuration: 1.4)
+            home.buttons["Small widget"].tap()
+            let resized = XCTNSPredicateExpectation(predicate: NSPredicate(format: "frame.size.width < 210"), object: firstIcon)
+            XCTAssertEqual(XCTWaiter.wait(for: [resized], timeout: 8), .completed)
+        }
         firstIcon.press(forDuration: 1.4)
         let edit = home.buttons["Edit Home Screen"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
@@ -108,11 +114,12 @@ final class WidgetUITests: XCTestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 5))
         menu.tap()
         home.buttons["Add Widget"].tap()
-        let search = home.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 8))
+        print("GALLERY " + home.debugDescription)
+        let search = home.searchFields.matching(NSPredicate(format: "identifier != %@ AND placeholderValue != %@", "dewey-search-field", "App Library")).firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 8), home.debugDescription)
         search.tap()
         search.typeText("Мой Компаньон")
-        let result = home.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Мой Компаньон")).allElementsBoundByIndex
+        let result = home.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Мой Компаньон")).allElementsBoundByIndex.filter { $0.isHittable && $0.elementType != .searchField }
         let tile = try XCTUnwrap(result.last)
         tile.tap()
         let add = home.buttons["Add Widget"]
