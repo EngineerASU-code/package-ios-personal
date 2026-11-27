@@ -76,6 +76,10 @@ final class ReminderUITests: XCTestCase {
             XCTAssertTrue(tab.waitForExistence(timeout: 8))
             tab.tap()
             XCTAssertTrue(tab.isSelected)
+            let title = name == "Компаньон" ? "Мой Компаньон" : name
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 8))
+            // Selection changes before UIKit finishes the visible tab transition.
+            Thread.sleep(forTimeInterval: 1)
             capture(name)
         }
         tabs.buttons["Компаньон"].tap()
