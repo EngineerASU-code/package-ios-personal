@@ -82,6 +82,14 @@ final class ReminderUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
             capture(name)
         }
+        tabs.buttons["Персонажи"].tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Мао Мао")).firstMatch.tap()
+        let moods = app.buttons["character-mood"]
+        for name in ["Радость", "Сонливость", "Удивление"] {
+            moods.tap()
+            app.buttons[name].tap()
+            capture("Мао Мао " + name)
+        }
         tabs.buttons["Компаньон"].tap()
         app.buttons["Портрет"].tap()
         XCTAssertTrue(app.buttons["Портрет"].isSelected)

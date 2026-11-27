@@ -50,7 +50,9 @@ struct Home: View {
                 .tabItem { Label("Напоминания", systemImage: "checklist") }
             NavigationStack {
                 List(Hero.allCases, id: \.self) { hero in
-                    Button { select(hero) } label: {
+                    NavigationLink {
+                        CharacterPreview(hero: hero, selected: state.hero == hero) { select(hero) }
+                    } label: {
                         HStack {
                             CompanionFigure(hero: hero).frame(width: 48, height: 56)
                             VStack(alignment: .leading) {
@@ -183,5 +185,40 @@ struct Home: View {
             message = pending.filter { $0.identifier == notice }.count == 1
                 ? "Напоминание запланировано" : "Не удалось подтвердить напоминание"
         } catch { message = "Не удалось создать напоминание" }
+    }
+}
+
+private struct CharacterPreview: View {
+    let hero: Hero
+    let selected: Bool
+    let select: () -> Void
+    @State private var emotion: ChibiEmotion = .neutral
+    @State private var portrait = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                CompanionFigure(hero: hero, portrait: portrait, emotion: emotion)
+                    .frame(maxWidth: .infinity).frame(height: 264)
+                    .background(LinearGradient(colors: [hero.sceneColor, .black],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 20))
+                Picker("Форма героя", selection: $portrait) {
+                    Text("Чиби").tag(false)
+                    Text("Портрет").tag(true)
+                }.pickerStyle(.segmented)
+                if !portrait {
+                    Picker("Эмоция", selection: $emotion) {
+                        Text("Спокойствие").tag(ChibiEmotion.neutral)
+                        Text("Радость").tag(ChibiEmotion.happy)
+                        Text("Сонливость").tag(ChibiEmotion.sleepy)
+                        Text("Удивление").tag(ChibiEmotion.surprised)
+                    }.pickerStyle(.menu).accessibilityIdentifier("character-mood")
+                }
+                Text(hero.dialogue.first?.text ?? "").font(.body)
+                Button(selected ? "Выбран" : "Выбрать", action: select)
+                    .buttonStyle(.borderedProminent).disabled(selected)
+            }.padding()
+        }.navigationTitle(hero.name)
     }
 }
