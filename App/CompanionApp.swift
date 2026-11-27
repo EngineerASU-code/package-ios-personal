@@ -17,48 +17,57 @@ struct Home: View {
     @State private var changingReminder = false
     private let notice = "mycompanion.preview"
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    Button { save { $0.react() } } label: { CompanionScene(state: state, display: DayTimeline.display(state, at: Date(), calendar: .current)) }
-                        .buttonStyle(.plain).disabled(state.mode == .safe || state.mode == .paused)
-                    Picker("Персонаж", selection: Binding(get: { state.hero }, set: { hero in
-                        save {
-                            $0.hero = hero
-                            _ = $0.greetIfNeeded(at: Date(), calendar: .current)
+        TabView {
+            NavigationStack {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        Button { save { $0.react() } } label: {
+                            CompanionScene(state: state, display: DayTimeline.display(state, at: Date(), calendar: .current))
+                                .frame(minHeight: 150)
                         }
-                    })) {
-                        ForEach(Hero.allCases, id: \.self) { Text($0.name).tag($0) }
-                    }
-                    if let pack = state.hero.pack {
-                        let finds = pack.finds.filter { find in state.unlocks.contains { $0.id == find.id } }
-                        if !finds.isEmpty {
-                            NavigationLink("Находки · \(finds.count)") {
-                                List(finds, id: \.id) { find in
-                                    VStack(alignment: .leading) {
-                                        Text(find.title).font(.headline)
-                                        Text(pack.byID[find.lineID]?.text ?? "")
-                                    }
-                                }.navigationTitle("Находки")
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Коснитесь, чтобы получить новую реплику")
+                        .disabled(state.mode == .safe || state.mode == .paused)
+                        heroPicker
+                        modePicker
+                        Button("Напомнить через минуту") { Task { await schedule() } }
+                            .disabled(changingReminder)
+                        Button("Отменить напоминание") { Task { await cancel() } }
+                            .disabled(changingReminder)
+                        if !message.isEmpty { Text(message).font(.footnote) }
+                        NavigationLink("Галерея находок") { gallery }
+                    }.padding()
+                }.navigationTitle("Мой Компаньон")
+            }.tabItem { Label("Компаньон", systemImage: "bubble.left") }
+            NavigationStack { CalendarPanel() }
+                .tabItem { Label("Календарь", systemImage: "calendar") }
+            NavigationStack { ReminderList() }
+                .tabItem { Label("Напоминания", systemImage: "checklist") }
+            NavigationStack {
+                List(Hero.allCases, id: \.self) { hero in
+                    Button { select(hero) } label: {
+                        HStack {
+                            Image(systemName: hero.sceneSymbol).foregroundStyle(hero.sceneColor)
+                            VStack(alignment: .leading) {
+                                Text(hero.name).font(.headline)
+                                Text(hero.dialogue.first?.text ?? "").font(.callout)
                             }
+                            Spacer()
+                            if hero == state.hero { Image(systemName: "checkmark") }
                         }
-                    }
-                    Picker("Режим", selection: Binding(get: { state.mode }, set: { mode in save { $0.mode = mode } })) {
-                        ForEach(CompanionMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    Button("Напомнить через минуту") { Task { await schedule() } }
-                        .disabled(changingReminder)
-                    Button("Отменить напоминание") { Task { await cancel() } }
-                        .disabled(changingReminder)
-                    NavigationLink("Напоминания") { ReminderList() }
-                    NavigationLink("Календарь") { CalendarPanel() }
+                    }.accessibilityAddTraits(hero == state.hero ? .isSelected : [])
+                }.navigationTitle("Персонажи")
+            }.tabItem { Label("Персонажи", systemImage: "person.2") }
+            NavigationStack {
+                Form {
+                    heroPicker
+                    modePicker
                     NavigationLink("Уведомления и тихие часы") { CompanionNoticePanel() }
                     DisclosureGroup("Как добавить виджет") {
                         Text("Удерживайте свободное место на экране «Домой», откройте галерею виджетов и найдите «Мой Компаньон». После добавления удерживайте виджет, чтобы выбрать героя.")
                     }
-                    Text(message).font(.footnote)
-                }.padding()
-            }.navigationTitle("Мой Компаньон")
+                }.navigationTitle("Настройки")
+            }.tabItem { Label("Настройки", systemImage: "gearshape") }
         }
         .modifier(CalendarRefresh())
         .companionNoticeReconciliation(hero: state.hero, mode: state.mode)
@@ -70,6 +79,53 @@ struct Home: View {
         }
         .onAppear { refresh() }.onChange(of: phase) { _, next in if next == .active { refresh() } }
     }
+    private var heroPicker: some View {
+        Picker("Персонаж", selection: Binding(get: { state.hero }, set: select)) {
+            ForEach(Hero.allCases, id: \.self) { Text($0.name).tag($0) }
+        }
+    }
+
+    private var modePicker: some View {
+        Picker("Режим", selection: Binding(get: { state.mode }, set: { mode in save { $0.mode = mode } })) {
+            ForEach(CompanionMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+    }
+
+    private func select(_ hero: Hero) {
+        save {
+            $0.hero = hero
+            _ = $0.greetIfNeeded(at: Date(), calendar: .current)
+        }
+    }
+
+    private var gallery: some View {
+        List {
+            if state.unlocks.isEmpty {
+                Text("Здесь появятся находки ваших компаньонов.")
+            }
+            ForEach(Hero.allCases, id: \.self) { hero in
+                if let pack = hero.pack {
+                    let finds = pack.finds.filter { find in state.unlocks.contains { $0.id == find.id } }
+                    if !finds.isEmpty {
+                        Section(hero.name) {
+                            ForEach(finds, id: \.id) { find in
+                                NavigationLink(find.title) {
+                                    List {
+                                        Text(find.title).font(.title2)
+                                        if let line = pack.byID[find.lineID] {
+                                            Text(line.text)
+                                            ShareLink(item: find.title + " — " + line.text) { Label("Поделиться", systemImage: "square.and.arrow.up") }
+                                        }
+                                    }.navigationTitle("Находка")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }.navigationTitle("Галерея находок")
+    }
+
     func refreshSchedules() {
         Task {
             _ = await ReminderNotifications.shared.reconcile()

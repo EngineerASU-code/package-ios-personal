@@ -1,7 +1,7 @@
 name: Stage 6 local reminders
 on:
   push:
-    branches: [ci/ios-reminders-stage6]
+    branches: [ci/ios-reminders-stage6, ci/ios-ui-stage7]
 permissions:
   contents: read
 jobs:
@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [testDenied, testScheduleReplaceCancel, testCreateAndCompleteTask, testCalendarPrivacy]
+        test: [testDenied, testScheduleReplaceCancel, testCreateAndCompleteTask, testCalendarPrivacy, testStageSevenNavigation]
     steps:
       - uses: actions/checkout@v4
       - name: Validate core and content

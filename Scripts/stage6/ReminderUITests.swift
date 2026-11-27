@@ -61,6 +61,29 @@ final class ReminderUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Подключить календарь для чтения"].waitForExistence(timeout: 8))
     }
 
+    func testStageSevenNavigation() {
+        continueAfterFailure = false
+        app.launch()
+        func capture(_ name: String) {
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = name
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+        let tabs = app.tabBars.firstMatch
+        for name in ["Компаньон", "Календарь", "Напоминания", "Персонажи", "Настройки"] {
+            let tab = tabs.buttons[name]
+            XCTAssertTrue(tab.waitForExistence(timeout: 8))
+            tab.tap()
+            XCTAssertTrue(tab.isSelected)
+            capture(name)
+        }
+        tabs.buttons["Компаньон"].tap()
+        app.buttons["Галерея находок"].tap()
+        XCTAssertTrue(app.navigationBars["Галерея находок"].waitForExistence(timeout: 5))
+        capture("Галерея")
+    }
+
     func testDenied() {
         start(grant: false)
         XCTAssertTrue(app.staticTexts["Уведомления выключены"].waitForExistence(timeout: 8))
