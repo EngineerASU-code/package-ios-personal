@@ -34,12 +34,11 @@ final class WidgetUITests: XCTestCase {
         let widget = home.icons.matching(NSPredicate(format: "label CONTAINS %@", "Мой Компаньон")).firstMatch
         let reaction = home.buttons.matching(NSPredicate(format: "label CONTAINS %@", heroName)).firstMatch
         let hasReactionLabel = reaction.waitForExistence(timeout: 8)
-        let target = hasReactionLabel ? reaction : widget
         capture("medium-before")
-        XCTAssertTrue(target.exists && target.frame.width > 130)
+        XCTAssertTrue(widget.exists && widget.frame.width > 130)
         let oldLabel = hasReactionLabel ? reaction.label : nil
         let oldWidget = oldLabel == nil ? widget.screenshot().pngRepresentation : nil
-        target.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.44)).tap()
+        widget.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.44)).tap()
         let changed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             if let oldLabel {
                 return reaction.exists && reaction.label.contains(heroName) && reaction.label != oldLabel
@@ -110,13 +109,10 @@ final class WidgetUITests: XCTestCase {
         func find(_ titles: [String], timeout: TimeInterval = 6) -> XCUIElement? {
             let deadline = Date().addingTimeInterval(timeout)
             repeat {
-                for surface in surfaces where surface.state != .notRunning {
-                    let matches = surface.descendants(matching: .any)
-                        .matching(NSPredicate(format: "label IN %@", titles))
-                        .allElementsBoundByIndex.filter { $0.isHittable }
-                    if let first = matches.sorted(by: { $0.frame.minX < $1.frame.minX }).first {
-                        return first
-                    }
+                for surface in surfaces where surface.state == .runningForeground {
+                    let first = surface.descendants(matching: .any)
+                        .matching(NSPredicate(format: "label IN %@", titles)).firstMatch
+                    if first.exists && first.isHittable { return first }
                 }
                 RunLoop.current.run(until: Date().addingTimeInterval(0.2))
             } while Date() < deadline
@@ -149,7 +145,7 @@ final class WidgetUITests: XCTestCase {
         let providerTop = provider.frame.minY
         let widgetLabels = NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "widget", "виджет")
         var preview: XCUIElement?
-        for surface in surfaces where surface.state != .notRunning {
+        for surface in surfaces where surface.state == .runningForeground {
             let candidates = surface.descendants(matching: .any).matching(widgetLabels).allElementsBoundByIndex
             preview = candidates.first { candidate in
                 let frame = candidate.frame
