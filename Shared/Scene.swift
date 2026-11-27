@@ -378,14 +378,34 @@ struct CompanionScene: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePack) private var pack
     private var shown: Reaction { display ?? state.reaction(using: pack) }
+    private var featuredArt: Bool { state.hero == .gojo || state.hero == .maomao }
+
+    private var speech: some View {
+        let pointsRight = state.hero == .maomao && state.contact?.portalOnRight == true
+        return Text(shown.text)
+            .font(.callout)
+            .foregroundStyle(.black)
+            .padding(8)
+            .background(.white, in: RoundedRectangle(cornerRadius: 12))
+            .background(alignment: pointsRight ? .trailing : .leading) {
+                if featuredArt && !typeSize.isAccessibilitySize {
+                    Rectangle().fill(.white)
+                        .frame(width: 11, height: 11)
+                        .rotationEffect(.degrees(45))
+                        .offset(x: pointsRight ? 2 : -2)
+                }
+            }
+    }
+
     var body: some View {
         let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout(spacing: 12))
         let figure = CompanionFigure(hero: state.hero, portrait: portrait, emotion: shown.emotion, daytimePose: shown.daytimePose)
             .frame(maxWidth: 148).frame(height: 168)
+            .scaleEffect(featuredArt && !typeSize.isAccessibilitySize ? 1.12 : 1)
         let caption = VStack(alignment: .leading, spacing: 6) {
             Text(state.hero.name).font(.headline)
             Text(shown.action).font(.caption)
-            if !shown.text.isEmpty { Text(shown.text).font(.callout).foregroundStyle(.black).padding(8).background(.white, in: RoundedRectangle(cornerRadius: 12)) }
+            if !shown.text.isEmpty { speech }
         }
         let fullMotion = !portrait && state.mode == .normal && state.animationsEnabled && !reduceMotion && !typeSize.isAccessibilitySize
         let descriptor = fullMotion ? pack?.animations[.app] : nil
@@ -423,10 +443,20 @@ struct HeroBackdrop: View {
             ZStack {
                 pack?.theme.sceneColor ?? .indigo
                 ArtworkContent(request: .backdrop(hero, date: date, mode: mode, schedule: daySchedule)) { art in
-                    if let art { Image(uiImage: art).resizable().scaledToFill() }
+                    if let art {
+                        Image(uiImage: art).resizable().scaledToFill()
+                    } else {
+                        // Keep the image-loading task mounted before the decoder returns.
+                        Color.clear
+                    }
                 }
-                LinearGradient(colors: [.black.opacity(0.12), .black.opacity(0.58)],
-                               startPoint: .top, endPoint: .bottom)
+                if hero == .maomao || hero == .gojo {
+                    LinearGradient(colors: [.clear, .black.opacity(0.58)],
+                                   startPoint: .top, endPoint: .bottom)
+                } else {
+                    LinearGradient(colors: [.black.opacity(0.12), .black.opacity(0.58)],
+                                   startPoint: .top, endPoint: .bottom)
+                }
             }
             .frame(width: geometry.size.width, height: geometry.size.height).clipped()
         }.accessibilityHidden(true)
