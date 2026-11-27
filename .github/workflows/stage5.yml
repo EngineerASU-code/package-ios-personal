@@ -41,6 +41,8 @@ jobs:
           osascript -e 'tell application "Simulator" to activate'
           osascript -e 'tell application "System Events" to keystroke "l" using command down'
           sleep 2
+          osascript -e 'tell application "System Events" to keystroke "l" using command down'
+          sleep 2
           xcrun simctl io "$DEVICE" screenshot evidence/lock-screen.png
       - name: Export UI screenshots
         if: always() && hashFiles('evidence/Widget.xcresult/Info.plist') != ''
