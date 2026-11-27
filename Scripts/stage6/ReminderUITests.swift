@@ -99,6 +99,15 @@ final class ReminderUITests: XCTestCase {
         app.buttons["Галерея находок"].tap()
         XCTAssertTrue(app.navigationBars["Галерея находок"].waitForExistence(timeout: 5))
         capture("Галерея")
+        app.terminate()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Мой Компаньон"].waitForExistence(timeout: 8))
+        capture("Компаньон крупный текст")
+        let heroScene = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Сатору Годжо")).firstMatch
+        XCTAssertTrue(heroScene.exists)
+        XCTAssertFalse(heroScene.label.isEmpty)
+
     }
 
     func testDenied() {
