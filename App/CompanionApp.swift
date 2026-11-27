@@ -67,11 +67,19 @@ struct Home: View {
             }.tabItem { Label("Персонажи", systemImage: "person.2") }
             NavigationStack {
                 Form {
-                    heroPicker
+                    NavigationLink("Оформление компаньона") {
+                        Form {
+                            heroPicker
+                            Picker("Форма героя", selection: $portrait) {
+                                Text("Чиби").tag(false)
+                                Text("Портрет").tag(true)
+                            }
+                        }.navigationTitle("Оформление")
+                    }
                     modePicker
                     NavigationLink("Уведомления и тихие часы") { CompanionNoticePanel() }
-                    DisclosureGroup("Как добавить виджет") {
-                        Text("Удерживайте свободное место на экране «Домой», откройте галерею виджетов и найдите «Мой Компаньон». После добавления удерживайте виджет, чтобы выбрать героя.")
+                    NavigationLink("Как добавить виджет") {
+                        Text("Удерживайте свободное место на экране «Домой», откройте галерею виджетов и найдите «Мой Компаньон». После добавления удерживайте виджет, чтобы выбрать героя.").padding().navigationTitle("Виджет")
                     }
                 }.navigationTitle("Настройки")
             }.tabItem { Label("Настройки", systemImage: "gearshape") }
@@ -200,9 +208,7 @@ private struct CharacterPreview: View {
             VStack(spacing: 18) {
                 CompanionFigure(hero: hero, portrait: portrait, emotion: emotion)
                     .frame(maxWidth: .infinity).frame(height: 264)
-                    .background(LinearGradient(colors: [hero.sceneColor, .black],
-                                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                                in: RoundedRectangle(cornerRadius: 20))
+                    .background { HeroBackdrop(hero: hero) }.clipShape(RoundedRectangle(cornerRadius: 20))
                 Picker("Форма героя", selection: $portrait) {
                     Text("Чиби").tag(false)
                     Text("Портрет").tag(true)

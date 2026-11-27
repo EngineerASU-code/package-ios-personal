@@ -138,21 +138,16 @@ struct WidgetScene: View {
     private var portalOnRight: Bool { entry.state.contact?.portalOnRight ?? false }
 
     private var figure: some View {
-        ZStack {
-            if showsPortal {
-                Ellipse().strokeBorder(entry.state.hero.sceneColor.opacity(0.7), lineWidth: 2)
-                    .padding(.vertical, 4)
-            }
-            CompanionFigure(hero: entry.state.hero, emotion: line.emotion)
-        }
-            .frame(width: family == .systemSmall ? 48 : (family == .systemLarge ? 110 : 76),
-                   height: family == .systemSmall ? 50 : (family == .systemLarge ? 124 : 84))
+        CompanionFigure(hero: entry.state.hero, emotion: line.emotion)
+            .frame(maxWidth: family == .systemSmall ? 110 : (family == .systemLarge ? 172 : 124),
+                   maxHeight: family == .systemSmall ? 90 : (family == .systemLarge ? 190 : 126))
+            .shadow(color: .black.opacity(0.42), radius: 3, y: 2)
             .transition(.opacity)
     }
 
     private var bubble: some View {
-        Text(speech).font(.callout).padding(6)
-            .background(.background, in: RoundedRectangle(cornerRadius: 10))
+        Text(speech).font(.callout).foregroundStyle(.black).padding(7)
+            .background(Color(red: 1, green: 0.97, blue: 0.91), in: RoundedRectangle(cornerRadius: 10))
             .lineLimit(family == .systemSmall ? 3 : 5)
             .contentTransition(animates ? .opacity : .identity)
     }
@@ -170,7 +165,12 @@ struct WidgetScene: View {
             }
         default:
             VStack(alignment: .leading, spacing: family == .systemSmall ? 4 : 10) {
-                HStack(spacing: family == .systemSmall ? 4 : 10) {
+                if family == .systemSmall {
+                    figure.frame(maxWidth: .infinity)
+                    Text(entry.state.hero.name).font(.caption.bold())
+                    if !speech.isEmpty { bubble.lineLimit(2) }
+                } else {
+                HStack(spacing: 8) {
                     if !(showsPortal && portalOnRight) { figure }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(entry.state.hero.name).font(.headline)
@@ -179,7 +179,7 @@ struct WidgetScene: View {
                     }
                     if showsPortal && portalOnRight { figure }
                 }
-                if family == .systemSmall && !speech.isEmpty { bubble }
+                }
                 if family == .systemMedium || family == .systemLarge {
                     ForEach(entry.state.calendarSnapshot.upcoming(at: entry.date).prefix(family == .systemLarge ? 3 : 1)) { event in
                         HStack(spacing: 4) {
@@ -199,7 +199,7 @@ struct WidgetScene: View {
                     let count = entry.state.unlocks.filter { $0.id.hasPrefix(entry.state.hero.rawValue + "_") }.count
                     Text("Находки · \(count)").font(.subheadline)
                 }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }.foregroundStyle(.white).shadow(color: .black.opacity(0.35), radius: 1).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
     }
     var body: some View {
@@ -218,7 +218,11 @@ struct WidgetScene: View {
             }
         }.animation(animates ? .easeOut(duration: 0.2) : nil, value: line.id)
         .transaction { if !animates { $0.disablesAnimations = true; $0.animation = nil } }
-        .containerBackground(for: .widget) { (entry.available ? entry.state.hero.sceneColor : Color.gray).opacity(0.18) }
+        .containerBackground(for: .widget) {
+            if entry.available && [.systemSmall, .systemMedium, .systemLarge].contains(family) {
+                HeroBackdrop(hero: entry.state.hero)
+            } else { Color.clear }
+        }
     }
 }
 

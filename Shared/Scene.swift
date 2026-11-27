@@ -28,8 +28,25 @@ struct CompanionScene: View {
         .foregroundStyle(.white).padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
-        .background(LinearGradient(colors: [state.hero.sceneColor.opacity(0.74), Color(red: 0.08, green: 0.08, blue: 0.18)], startPoint: .topLeading, endPoint: .bottomTrailing))
-        .background(Color.black).clipShape(RoundedRectangle(cornerRadius: 18))
+        .background { HeroBackdrop(hero: state.hero) }
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+struct HeroBackdrop: View {
+    let hero: Hero
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                hero.sceneColor
+                if let art = UIImage(named: "Characters/" + hero.rawValue + "/scene.jpg") {
+                    Image(uiImage: art).resizable().scaledToFill()
+                }
+                LinearGradient(colors: [.black.opacity(0.12), .black.opacity(0.58)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height).clipped()
+        }.accessibilityHidden(true)
     }
 }
 
