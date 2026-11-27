@@ -33,11 +33,12 @@ final class WidgetUITests: XCTestCase {
         capture("medium-before")
         print("HOME BEFORE " + home.debugDescription)
         XCTAssertTrue(target.exists && target.frame.width > 130)
+        let oldLabel = reaction.label
         target.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.44)).tap()
         // Wait for the system transition and the asynchronous AppIntent reload.
         Thread.sleep(forTimeInterval: 4)
         capture("medium-after")
-        print("HOME AFTER " + home.debugDescription)
+        XCTAssertNotEqual(reaction.label, oldLabel)
         app.activate()
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Обычный")).firstMatch.tap()
         app.buttons["Безопасный"].tap()
@@ -45,6 +46,31 @@ final class WidgetUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         Thread.sleep(forTimeInterval: 4)
         capture("safe-static")
+        XCTAssertFalse(reaction.exists)
+        XCTAssertTrue(home.staticTexts["Мао Мао"].firstMatch.exists)
+
+        // Return to Normal, then verify the other two Home Screen sizes.
+        app.activate()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Безопасный")).firstMatch.tap()
+        app.buttons["Обычный"].tap()
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(reaction.waitForExistence(timeout: 20))
+        for (name, fraction) in [("small", 0.375), ("large", 0.875)] {
+            let current = home.icons["Мой Компаньон"].firstMatch
+            XCTAssertTrue(current.waitForExistence(timeout: 10))
+            current.press(forDuration: 1.3)
+            capture("size-menu-" + name)
+            print("SIZE MENU " + home.debugDescription)
+            let menu = home.buttons["Edit Home Screen"]
+            XCTAssertTrue(menu.waitForExistence(timeout: 5))
+            menu.coordinate(withNormalizedOffset: CGVector(dx: fraction, dy: 0.5))
+                .withOffset(CGVector(dx: 0, dy: -50)).tap()
+            Thread.sleep(forTimeInterval: 3)
+            capture("home-" + name)
+            XCTAssertTrue(current.exists)
+            if name == "small" { XCTAssertLessThan(current.frame.width, 210) }
+            else { XCTAssertGreaterThan(current.frame.height, 300) }
+        }
     }
 
     private func capture(_ name: String) {
