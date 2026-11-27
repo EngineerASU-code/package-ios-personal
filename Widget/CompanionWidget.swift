@@ -157,7 +157,8 @@ struct WidgetScene: View {
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
-                CompanionFigure(hero: entry.state.hero, emotion: line.emotion).padding(2)
+                CompanionFigure(hero: entry.state.hero, emotion: line.emotion)
+                    .contrast(1.18).padding(1)
             }.accessibilityLabel(entry.state.hero.name)
         case .accessoryInline:
             Label(entry.state.hero.name, systemImage: symbol)
@@ -166,11 +167,32 @@ struct WidgetScene: View {
                 CompanionFigure(hero: entry.state.hero, emotion: line.emotion)
                     .frame(width: 40, height: 46)
                 VStack(alignment: .leading, spacing: 2) {
-                Text(entry.state.hero.name).font(.headline)
-                Text(speech.isEmpty ? line.action : speech).lineLimit(2)
-            }
+                    Text(entry.state.hero.name).font(.headline).lineLimit(1)
+                    Text(speech.isEmpty ? line.action : (entry.state.hero.pack?.byID[line.id]?.shortText ?? speech))
+                        .font(.caption).lineLimit(2)
+                }
             }
         default: EmptyView()
+        }
+    }
+
+    private var smallJinwoo: some View {
+        GeometryReader { bounds in
+            ZStack(alignment: .bottomLeading) {
+                CompanionFigure(hero: .jinwoo, emotion: line.emotion)
+                    .shadow(color: .white.opacity(0.60), radius: 2)
+                    .frame(width: bounds.size.width, height: bounds.size.height, alignment: .top)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(entry.state.hero.name).font(.caption.bold())
+                        .foregroundStyle(.white).padding(.horizontal, 4)
+                        .background(.black.opacity(0.78), in: Capsule())
+                    if !speech.isEmpty {
+                        Text(entry.state.hero.pack?.byID[line.id]?.shortText ?? speech)
+                            .font(.caption).foregroundStyle(.black).lineLimit(3)
+                            .padding(4).background(.white, in: RoundedRectangle(cornerRadius: 6))
+                    }
+                }
+            }
         }
     }
 
@@ -178,6 +200,8 @@ struct WidgetScene: View {
         switch family {
         case .accessoryCircular, .accessoryInline, .accessoryRectangular:
             accessory(family)
+        case .systemSmall where entry.state.hero == .jinwoo:
+            smallJinwoo
         default:
             VStack(alignment: .leading, spacing: family == .systemSmall ? 4 : 10) {
                 if family == .systemSmall {

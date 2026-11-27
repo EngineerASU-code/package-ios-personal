@@ -94,6 +94,64 @@ final class WidgetUITests: XCTestCase {
         }
     }
 
+    func testTwoSmallWidgets() throws {
+        continueAfterFailure = false
+        app.launch()
+        XCUIDevice.shared.press(.home)
+        let firstIcon = home.icons["Мой Компаньон"].firstMatch
+        XCTAssertTrue(firstIcon.waitForExistence(timeout: 10))
+        firstIcon.press(forDuration: 1.4)
+        let edit = home.buttons["Edit Home Screen"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+        let menu = home.buttons["Edit"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.tap()
+        home.buttons["Add Widget"].tap()
+        let search = home.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 8))
+        search.tap()
+        search.typeText("Мой Компаньон")
+        let result = home.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Мой Компаньон")).allElementsBoundByIndex
+        let tile = try XCTUnwrap(result.last)
+        tile.tap()
+        let add = home.buttons["Add Widget"]
+        XCTAssertTrue(add.waitForExistence(timeout: 6))
+        add.tap()
+        let done = home.buttons["Done"]
+        if done.waitForExistence(timeout: 5) { done.tap() }
+        let widgets = home.icons.matching(NSPredicate(format: "label CONTAINS %@", "Мой Компаньон"))
+        let installed = widgets.allElementsBoundByIndex.filter { $0.frame.width > 130 }
+        XCTAssertEqual(installed.count, 2, home.debugDescription)
+        // Resize the existing large widget after adding the second instance.
+        for item in installed where item.frame.width > 210 {
+            item.press(forDuration: 1.4)
+            home.buttons["Small widget"].tap()
+        }
+        let small = widgets.allElementsBoundByIndex.filter { $0.frame.width > 130 && $0.frame.width < 210 }
+        XCTAssertEqual(small.count, 2, home.debugDescription)
+        let second = small[1]
+        second.press(forDuration: 1.4)
+        home.buttons["Edit Widget"].tap()
+        let picker = home.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Как в приложении")).firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), home.debugDescription)
+        picker.tap()
+        home.staticTexts["Мао Мао"].firstMatch.tap()
+        home.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap()
+        let jinwoo = home.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Сон Джин Ву")).firstMatch
+        let maomao = home.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Мао Мао")).firstMatch
+        XCTAssertTrue(jinwoo.waitForExistence(timeout: 12))
+        XCTAssertTrue(maomao.waitForExistence(timeout: 12))
+        XCTAssertLessThan(abs(jinwoo.frame.midY - maomao.frame.midY), 30)
+        capture("two-small-before")
+        let other = maomao.label
+        let original = jinwoo.label
+        jinwoo.tap()
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", original), object: jinwoo)
+        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 15), .completed)
+        XCTAssertEqual(maomao.label, other)
+        capture("two-small-after")
+    }
     private func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
