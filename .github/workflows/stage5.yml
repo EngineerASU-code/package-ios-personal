@@ -39,11 +39,37 @@ jobs:
         run: |
           open -a Simulator --args -CurrentDeviceUDID "$DEVICE"
           osascript -e 'tell application "Simulator" to activate'
-          osascript -e 'tell application "System Events" to keystroke "l" using command down'
           sleep 2
           osascript -e 'tell application "System Events" to keystroke "l" using command down'
           sleep 2
-          xcrun simctl io "$DEVICE" screenshot evidence/lock-screen.png
+          window=$(swift - <<'SWIFT'
+          import CoreGraphics
+          import Foundation
+          let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+          for window in windows {
+              guard window[kCGWindowOwnerName as String] as? String == "Simulator",
+                    window[kCGWindowLayer as String] as? Int == 0,
+                    let id = window[kCGWindowNumber as String] as? Int,
+                    let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
+                    let x = bounds["X"], let y = bounds["Y"],
+                    let w = bounds["Width"], let h = bounds["Height"], h > w, w > 150 else { continue }
+              let point = CGPoint(x: x + w / 2, y: y + h * 0.67)
+              for kind: CGEventType in [.mouseMoved, .leftMouseDown, .leftMouseUp] {
+                  CGEvent(mouseEventSource: nil, mouseType: kind, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+                  Thread.sleep(forTimeInterval: 0.1)
+              }
+              print(id)
+              exit(0)
+          }
+          fputs("Simulator device window not found\n", stderr)
+          exit(1)
+          SWIFT
+          )
+          sleep 2
+          result=0
+          xcrun simctl io "$DEVICE" screenshot evidence/lock-screen.png || result=1
+          screencapture -x -o -l "$window" evidence/lock-screen-window.png || result=1
+          exit "$result"
       - name: Export UI screenshots
         if: always() && hashFiles('evidence/Widget.xcresult/Info.plist') != ''
         run: xcrun xcresulttool export attachments --path evidence/Widget.xcresult --output-path evidence/screens

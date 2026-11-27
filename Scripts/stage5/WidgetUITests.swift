@@ -121,7 +121,7 @@ final class WidgetUITests: XCTestCase {
         let result = home.collectionViews["add-sheet-collection-view"].descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Мой Компаньон")).allElementsBoundByIndex.filter { $0.isHittable && $0.elementType != .searchField }
         let tile = try XCTUnwrap(result.last)
         tile.tap()
-        let add = home.buttons["Add Widget"]
+        let add = home.buttons.matching(NSPredicate(format: "label ENDSWITH %@", "Add Widget")).allElementsBoundByIndex.last ?? home.buttons[" Add Widget"]
         XCTAssertTrue(add.waitForExistence(timeout: 6))
         add.tap()
         let done = home.buttons["Done"]
