@@ -26,7 +26,9 @@ struct Settings: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "Настройки компаньона"
     @Parameter(title: "Персонаж", default: .followPrimary) var selection: WidgetHero
     @Parameter(title: "Показывать реплики", default: true) var showsSpeech: Bool
+    @Parameter(title: "Показывать срок задачи", default: true) var showsTask: Bool
     @Parameter(title: "Показывать число находок", default: false) var showsCount: Bool
+    @Parameter(title: "Показывать календарь", default: true) var showsCalendar: Bool
 }
 
 struct React: AppIntent {
@@ -70,6 +72,9 @@ struct Provider: AppIntentTimelineProvider {
             let process = ProcessInfo.processInfo
             if state.mode != .paused && process.thermalState == .critical { state.mode = .safe }
             if state.mode == .normal && (process.isLowPowerModeEnabled || process.thermalState == .serious) { state.mode = .eco }
+            if !configuration.showsCalendar || state.mode == .safe || state.mode == .paused {
+                state.calendarSnapshot = CalendarSnapshot()
+            }
             let now = Date()
             return Entry(date: now, state: state, settings: configuration,
                          display: DayTimeline.display(state, at: now, calendar: .current))
@@ -93,7 +98,18 @@ struct Provider: AppIntentTimelineProvider {
             return Timeline(entries: [first], policy: .never)
         }
         let calendar = Calendar.current
-        let dates = DayTimeline.dates(from: first.date, mode: first.state.mode, calendar: calendar)
+        var scheduled = Set(DayTimeline.dates(from: first.date, mode: first.state.mode, calendar: calendar))
+        let snapshot = first.state.calendarSnapshot
+        if let expiry = snapshot.expiry, snapshot.isFresh(at: first.date) {
+            scheduled.insert(expiry)
+            for end in snapshot.events.map(\.end).sorted() where end > first.date && end < expiry {
+                if scheduled.count >= 48 { break }
+                if scheduled.allSatisfy({ abs($0.timeIntervalSince(end)) >= 300 }) {
+                    scheduled.insert(end)
+                }
+            }
+        }
+        let dates = scheduled.sorted()
         let entries = dates.map { date in
             Entry(date: date, state: first.state, settings: configuration,
                   display: DayTimeline.display(first.state, at: date, calendar: calendar))
@@ -157,6 +173,21 @@ struct WidgetScene: View {
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
                         .lineLimit(family == .systemSmall ? 3 : 5)
                         .contentTransition(animates ? .opacity : .identity)
+                }
+                if family == .systemMedium || family == .systemLarge {
+                    ForEach(entry.state.calendarSnapshot.upcoming(at: entry.date).prefix(family == .systemLarge ? 3 : 1)) { event in
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar")
+                            Text(event.start, format: .dateTime.day().month())
+                            Text(event.timeLabel)
+                            Text(event.label).privacySensitive()
+                        }.font(.caption2).lineLimit(1)
+                    }
+                }
+                if (family == .systemMedium || family == .systemLarge), entry.settings.showsTask,
+                   let due = entry.state.reminders.filter({ $0.completedAt == nil }).compactMap(\.target).min() {
+                    Label("Задача · \(due.formatted(date: .abbreviated, time: .shortened))", systemImage: "checklist")
+                        .font(.caption2).lineLimit(1).privacySensitive()
                 }
                 if family == .systemLarge && entry.settings.showsCount {
                     let count = entry.state.unlocks.filter { $0.id.hasPrefix(entry.state.hero.rawValue + "_") }.count

@@ -55,7 +55,26 @@ final class CharacterPack {
     let theme: Theme
     struct Record: Decodable {
         let id, text, category, action: String
+        let triggers, channels, requires: [String]
+        let weight: Int
+        let shortText: String?
         var reaction: Reaction { Reaction(id, text, action) }
+    }
+
+    // A stable slot value keeps the chosen text unchanged during reconciliation.
+    static func notificationLine(in rows: [Record], trigger: String, facts: Set<String>, slot: UInt64) -> Record? {
+        let candidates = rows.filter {
+            $0.weight > 0 && $0.channels.contains("notification") &&
+                $0.triggers.contains(trigger) && facts.isSuperset(of: $0.requires)
+        }
+        let total = candidates.reduce(UInt64(0)) { $0 + UInt64($1.weight) }
+        guard total > 0 else { return nil }
+        var choice = slot % total
+        for row in candidates {
+            if choice < UInt64(row.weight) { return row }
+            choice -= UInt64(row.weight)
+        }
+        return nil
     }
 
     private struct Manifest: Decodable { let id: String; let schemaVersion: Int }
@@ -100,7 +119,79 @@ final class CharacterPack {
     }
 }
 
+enum TaskRecurrence: String, Codable, CaseIterable {
+    case once, daily, weekly
+
+    var label: String {
+        switch self {
+        case .once: return "Без повтора"
+        case .daily: return "Каждый день"
+        case .weekly: return "Каждую неделю"
+        }
+    }
+}
+
+struct LocalReminder: Codable, Equatable, Identifiable {
+    var id = UUID()
+    var title = ""
+    var createdAt = Date()
+    var dueAt: Date?
+    var recurrence = TaskRecurrence.once
+    var seriesAnchor: Date?
+    var snoozedUntil: Date?
+    var completedAt: Date?
+    var notificationEnabled = false
+    var revision = 0
+    var updatedAt = Date()
+    var target: Date? { snoozedUntil ?? dueAt }
+
+    mutating func complete(at now: Date, calendar: Calendar = .current) {
+        guard completedAt == nil else { return }
+        snoozedUntil = nil
+        if let current = dueAt, recurrence != .once {
+            let anchor = seriesAnchor ?? current
+            seriesAnchor = anchor
+            let threshold = max(current, now)
+            let interval = recurrence == .daily ? 1 : 7
+            let elapsed = calendar.dateComponents([.day], from: calendar.startOfDay(for: anchor),
+                                                   to: calendar.startOfDay(for: threshold)).day ?? 0
+            var days = max(1, elapsed / interval) * interval
+            var next = calendar.date(byAdding: .day, value: days, to: anchor)
+            if let date = next, date <= threshold {
+                days += interval
+                next = calendar.date(byAdding: .day, value: days, to: anchor)
+            }
+            if let next { dueAt = next } else { completedAt = now }
+        } else { completedAt = now }
+        revision += 1
+        updatedAt = now
+    }
+
+    mutating func snooze(minutes: Int, at now: Date) {
+        guard completedAt == nil, [10, 30, 60].contains(minutes) else { return }
+        snoozedUntil = now.addingTimeInterval(Double(minutes * 60))
+        revision += 1
+        updatedAt = now
+    }
+
+    func notificationDate(after now: Date, quietStart: Int, quietEnd: Int,
+                          allowDuringQuiet: Bool, calendar: Calendar = .current) -> Date? {
+        guard notificationEnabled, completedAt == nil, var date = target else { return nil }
+        let hour = calendar.component(.hour, from: date)
+        let quiet = quietStart > quietEnd ? hour >= quietStart || hour < quietEnd :
+            hour >= quietStart && hour < quietEnd
+        if quiet && !allowDuringQuiet {
+            guard let end = calendar.nextDate(after: date, matching: DateComponents(hour: quietEnd, minute: 0),
+                                              matchingPolicy: .nextTime) else { return nil }
+            date = end
+        }
+        return date > now ? date : nil
+    }
+}
+
 struct Companion: Codable, Equatable {
+    var reminders: [LocalReminder] = []
+    var calendarSnapshot = CalendarSnapshot()
     var mode = CompanionMode.normal
     var hero = Hero.gojo
     private var histories: [String: [String]] = [:]
@@ -116,11 +207,13 @@ struct Companion: Codable, Equatable {
     init() {}
 
     // Old snapshots stored Gojo's first three phrases by position.
-    private enum CodingKeys: String, CodingKey { case mode, hero, histories, contacts, greetingDays, unlocks }
+    private enum CodingKeys: String, CodingKey { case calendarSnapshot, mode, hero, histories, contacts, greetingDays, unlocks, reminders }
     private enum LegacyKeys: String, CodingKey { case line, contact }
     init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
+        calendarSnapshot = try fields.decodeIfPresent(CalendarSnapshot.self, forKey: .calendarSnapshot) ?? CalendarSnapshot()
         mode = try fields.decode(CompanionMode.self, forKey: .mode)
+        reminders = try fields.decodeIfPresent([LocalReminder].self, forKey: .reminders) ?? []
         unlocks = try fields.decodeIfPresent([Unlock].self, forKey: .unlocks) ?? []
         contacts = try fields.decodeIfPresent([String: Contact].self, forKey: .contacts) ?? [:]
         let old = try decoder.container(keyedBy: LegacyKeys.self)

@@ -11,9 +11,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [testDenied, testScheduleReplaceCancel]
+        test: [testDenied, testScheduleReplaceCancel, testCreateAndCompleteTask, testCalendarPrivacy]
     steps:
       - uses: actions/checkout@v4
+      - name: Validate core and content
+        if: matrix.test == 'testScheduleReplaceCancel'
+        run: |
+          swift test
+          python3 Scripts/validate_content.py
       - name: Prepare fresh iPhone
         run: |
           gem list -i xcodeproj || gem install xcodeproj --user-install --no-document
@@ -26,10 +31,17 @@ jobs:
         env:
           TEST: ${{ matrix.test }}
         run: |
-          xcodebuild test -project MyCompanion.xcodeproj -scheme Reminders -destination "platform=iOS Simulator,id=$DEVICE" ONLY_ACTIVE_ARCH=YES -parallel-testing-enabled NO -only-testing:"WidgetUITests/ReminderUITests/$TEST" -resultBundlePath Reminder.xcresult
+          set -o pipefail
+          xcodebuild test -project MyCompanion.xcodeproj -scheme Reminders -destination "platform=iOS Simulator,id=$DEVICE" ONLY_ACTIVE_ARCH=YES -parallel-testing-enabled NO -only-testing:"WidgetUITests/ReminderUITests/$TEST" -resultBundlePath Reminder.xcresult 2>&1 | tee xcodebuild.log
+      - name: Export screenshots
+        if: always() && hashFiles('Reminder.xcresult/Info.plist') != ''
+        run: xcrun xcresulttool export attachments --path Reminder.xcresult --output-path screens
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: reminder-${{ matrix.test }}
-          path: Reminder.xcresult
+          path: |
+            Reminder.xcresult
+            screens
+            xcodebuild.log
           retention-days: 7

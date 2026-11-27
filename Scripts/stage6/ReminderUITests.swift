@@ -18,6 +18,49 @@ final class ReminderUITests: XCTestCase {
         }
     }
 
+    func testCreateAndCompleteTask() {
+        continueAfterFailure = false
+        app.launch()
+        app.buttons["Напоминания"].tap()
+        app.buttons["Добавить"].tap()
+        let title = app.descendants(matching: .any)["task-title"].firstMatch
+        title.tap()
+        title.typeText("Test task")
+        app.buttons["Сохранить"].tap()
+        let options = app.buttons["Действия с задачей Test task"]
+        XCTAssertTrue(options.waitForExistence(timeout: 8))
+        app.terminate()
+        app.launch()
+        app.buttons["Напоминания"].tap()
+        options.tap()
+        app.buttons["Выполнить"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label =[c] %@", "Завершённые")).firstMatch.waitForExistence(timeout: 8))
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "completed-local-task"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testCalendarPrivacy() {
+        continueAfterFailure = false
+        app.launch()
+        app.buttons["Календарь"].tap()
+        XCTAssertFalse(springboard.alerts.firstMatch.exists)
+        app.buttons["Подключить календарь для чтения"].tap()
+        let alert = springboard.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 12))
+        alert.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Full Access")).firstMatch.tap()
+        let titles = app.switches["Показывать названия в расписании и виджете"]
+        XCTAssertTrue(titles.waitForExistence(timeout: 8))
+        XCTAssertEqual(titles.value as? String, "0")
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "calendar-private"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        app.buttons["Отключить календарь"].tap()
+        XCTAssertTrue(app.buttons["Подключить календарь для чтения"].waitForExistence(timeout: 8))
+    }
+
     func testDenied() {
         start(grant: false)
         XCTAssertTrue(app.staticTexts["Уведомления выключены"].waitForExistence(timeout: 8))

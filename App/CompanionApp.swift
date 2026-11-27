@@ -3,6 +3,7 @@ import WidgetKit
 import UserNotifications
 
 @main struct CompanionApp: App {
+    @UIApplicationDelegateAdaptor(NotificationActions.self) private var actions
     var body: some Scene { WindowGroup { Home() } }
 }
 
@@ -10,6 +11,9 @@ struct Home: View {
     @Environment(\.scenePhase) private var phase
     @State private var state = Companion()
     @State private var message = ""
+    @AppStorage("quietStartHour") private var quietStartHour = 23
+    @AppStorage("quietEndHour") private var quietEndHour = 7
+    @AppStorage("allowTasksDuringQuiet") private var allowTasksDuringQuiet = true
     @State private var changingReminder = false
     private let notice = "mycompanion.preview"
     var body: some View {
@@ -46,15 +50,34 @@ struct Home: View {
                         .disabled(changingReminder)
                     Button("Отменить напоминание") { Task { await cancel() } }
                         .disabled(changingReminder)
+                    NavigationLink("Напоминания") { ReminderList() }
+                    NavigationLink("Календарь") { CalendarPanel() }
+                    NavigationLink("Уведомления и тихие часы") { CompanionNoticePanel() }
                     DisclosureGroup("Как добавить виджет") {
                         Text("Удерживайте свободное место на экране «Домой», откройте галерею виджетов и найдите «Мой Компаньон». После добавления удерживайте виджет, чтобы выбрать героя.")
                     }
                     Text(message).font(.footnote)
                 }.padding()
             }.navigationTitle("Мой Компаньон")
-        }.onAppear { refresh() }.onChange(of: phase) { _, next in if next == .active { refresh() } }
+        }
+        .modifier(CalendarRefresh())
+        .companionNoticeReconciliation(hero: state.hero, mode: state.mode)
+        .onChange(of: quietStartHour) { _, _ in refreshSchedules() }
+        .onChange(of: quietEndHour) { _, _ in refreshSchedules() }
+        .onChange(of: allowTasksDuringQuiet) { _, _ in refreshSchedules() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+            if phase == .active { refreshSchedules() }
+        }
+        .onAppear { refresh() }.onChange(of: phase) { _, next in if next == .active { refresh() } }
+    }
+    func refreshSchedules() {
+        Task {
+            _ = await ReminderNotifications.shared.reconcile()
+            await CalendarController.shared.refresh()
+        }
     }
     func refresh() {
+        Task { _ = await ReminderNotifications.shared.reconcile() }
         do {
             let store = try Store.shared()
             state = try store.read()
