@@ -145,12 +145,19 @@ final class WidgetUITests: XCTestCase {
         }
         try XCTUnwrap(find(["Мой Компаньон"]), "Companion widget in gallery").tap()
         capture("lock-accessory-gallery")
-        let preview = try XCTUnwrap(find(["Мой Компаньон", "Компаньон"]).flatMap { element in
-            surfaces.filter { $0.state != .notRunning }.flatMap {
-                $0.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "widget", "виджет")).allElementsBoundByIndex
-            }.first { $0.isHittable && $0.frame.width >= 45 && $0.frame.height >= 45 && $0.frame.height <= 110 && $0.frame.midY > element.frame.minY }
-        }, "Accessory preview in provider sheet")
-        preview.tap()
+        let provider = try XCTUnwrap(find(["Мой Компаньон", "Компаньон"]), "Provider sheet")
+        let providerTop = provider.frame.minY
+        let widgetLabels = NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "widget", "виджет")
+        var preview: XCUIElement?
+        for surface in surfaces where surface.state != .notRunning {
+            let candidates = surface.descendants(matching: .any).matching(widgetLabels).allElementsBoundByIndex
+            preview = candidates.first { candidate in
+                let frame = candidate.frame
+                return candidate.isHittable && frame.width >= 45 && (45...110).contains(frame.height) && frame.midY > providerTop
+            }
+            if preview != nil { break }
+        }
+        try XCTUnwrap(preview, "Accessory preview in provider sheet").tap()
         for _ in 0..<2 {
             if let close = find(["Close", "Close Add Widgets"], timeout: 2) { close.tap() }
         }
