@@ -168,7 +168,11 @@ struct WidgetScene: View {
                 if family == .systemSmall {
                     figure.frame(maxWidth: .infinity)
                     Text(entry.state.hero.name).font(.caption.bold())
-                    if !speech.isEmpty { bubble.lineLimit(2) }
+                    if !speech.isEmpty {
+                        Text(entry.state.hero.pack?.byID[line.id]?.shortText ?? line.action)
+                            .font(.caption).foregroundStyle(.black).lineLimit(2)
+                            .padding(4).background(.white, in: RoundedRectangle(cornerRadius: 6))
+                    }
                 } else {
                 HStack(spacing: 8) {
                     if !(showsPortal && portalOnRight) { figure }
@@ -202,6 +206,14 @@ struct WidgetScene: View {
             }.foregroundStyle(.white).shadow(color: .black.opacity(0.35), radius: 1).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
     }
+    private func actionLabel(_ title: String, _ icon: String) -> some View {
+        VStack(spacing: 2) {
+            Image(systemName: icon)
+            Text(title).font(.caption2.bold())
+        }.foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 44)
+            .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 11))
+    }
+
     var body: some View {
         Group {
             if !entry.available {
@@ -212,6 +224,19 @@ struct WidgetScene: View {
                 }
             }
             else if family == .accessoryInline || entry.state.mode == .safe || entry.state.mode == .paused { scene }
+            else if family == .systemLarge {
+                VStack(spacing: 4) {
+                    Button(intent: React(hero: entry.state.hero, follows: entry.settings.selection == .followPrimary)) { scene }
+                        .buttonStyle(.plain)
+                    HStack(spacing: 4) {
+                        Link(destination: URL(string: "mycompanion://calendar")!) { actionLabel("Календарь", "calendar") }
+                        Button(intent: React(hero: entry.state.hero, follows: entry.settings.selection == .followPrimary)) {
+                            actionLabel("Поговорить", "bubble.left")
+                        }.buttonStyle(.plain)
+                        Link(destination: URL(string: "mycompanion://reminders")!) { actionLabel("Задачи", "checklist") }
+                    }
+                }
+            }
             else {
                 Button(intent: React(hero: entry.state.hero, follows: entry.settings.selection == .followPrimary)) { scene }
                     .buttonStyle(.plain).accessibilityHint("Новая реакция персонажа")

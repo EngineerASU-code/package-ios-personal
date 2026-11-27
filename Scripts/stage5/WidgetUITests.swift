@@ -72,10 +72,20 @@ final class WidgetUITests: XCTestCase {
                 XCTAssertGreaterThan(current.frame.height, 300)
                 XCTAssertTrue(reaction.waitForExistence(timeout: 10))
                 let before = reaction.label
-                reaction.tap()
+                let talk = home.buttons["Поговорить"]
+                XCTAssertTrue(talk.waitForExistence(timeout: 8))
+                talk.tap()
                 let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", before), object: reaction)
                 XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 15), .completed)
                 capture("large-after")
+                for (title, screen) in [("Календарь", "Календарь"), ("Задачи", "Напоминания")] {
+                    let shortcut = home.descendants(matching: .any).matching(NSPredicate(format: "label == %@", title)).firstMatch
+                    XCTAssertTrue(shortcut.waitForExistence(timeout: 8))
+                    shortcut.tap()
+                    XCTAssertTrue(app.navigationBars[screen].waitForExistence(timeout: 10))
+                    capture("widget-" + screen)
+                    XCUIDevice.shared.press(.home)
+                }
             }
         }
     }

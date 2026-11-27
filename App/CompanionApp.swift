@@ -16,9 +16,10 @@ struct Home: View {
     @AppStorage("allowTasksDuringQuiet") private var allowTasksDuringQuiet = true
     @AppStorage("portraitForm") private var portrait = false
     @State private var changingReminder = false
+    @State private var selectedTab = 0
     private let notice = "mycompanion.preview"
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             NavigationStack {
                 ScrollView {
                     VStack(spacing: 16) {
@@ -43,11 +44,11 @@ struct Home: View {
                         NavigationLink("Галерея находок") { gallery }
                     }.padding()
                 }.navigationTitle("Мой Компаньон")
-            }.tabItem { Label("Компаньон", systemImage: "bubble.left") }
+            }.tabItem { Label("Компаньон", systemImage: "bubble.left") }.tag(0)
             NavigationStack { CalendarPanel() }
-                .tabItem { Label("Календарь", systemImage: "calendar") }
+                .tabItem { Label("Календарь", systemImage: "calendar") }.tag(1)
             NavigationStack { ReminderList() }
-                .tabItem { Label("Напоминания", systemImage: "checklist") }
+                .tabItem { Label("Напоминания", systemImage: "checklist") }.tag(2)
             NavigationStack {
                 List(Hero.allCases, id: \.self) { hero in
                     NavigationLink {
@@ -64,7 +65,7 @@ struct Home: View {
                         }
                     }.accessibilityAddTraits(hero == state.hero ? .isSelected : [])
                 }.navigationTitle("Персонажи")
-            }.tabItem { Label("Персонажи", systemImage: "person.2") }
+            }.tabItem { Label("Персонажи", systemImage: "person.2") }.tag(3)
             NavigationStack {
                 Form {
                     NavigationLink("Оформление компаньона") {
@@ -82,7 +83,14 @@ struct Home: View {
                         Text("Удерживайте свободное место на экране «Домой», откройте галерею виджетов и найдите «Мой Компаньон». После добавления удерживайте виджет, чтобы выбрать героя.").padding().navigationTitle("Виджет")
                     }
                 }.navigationTitle("Настройки")
-            }.tabItem { Label("Настройки", systemImage: "gearshape") }
+            }.tabItem { Label("Настройки", systemImage: "gearshape") }.tag(4)
+        }
+        .onOpenURL { url in
+            switch url.absoluteString {
+            case "mycompanion://calendar": selectedTab = 1
+            case "mycompanion://reminders": selectedTab = 2
+            default: break
+            }
         }
         .modifier(CalendarRefresh())
         .companionNoticeReconciliation(hero: state.hero, mode: state.mode)
