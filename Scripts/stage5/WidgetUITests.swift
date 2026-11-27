@@ -17,10 +17,10 @@ final class WidgetUITests: XCTestCase {
         home.buttons["Edit Home Screen"].tap()
         let edit = home.buttons["Edit"]
         if edit.exists { edit.tap() }
-        let add = home.buttons.matching(NSPredicate(format: "label IN %@", ["Add Widget", "Add Widgets", "Add"])).first
+        let add = home.buttons.matching(NSPredicate(format: "label IN %@", ["Add Widget", "Add Widgets", "Add"])).firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 5))
         add.tap()
-        let search = home.searchFields.first
+        let search = home.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
         search.typeText("Мой Компаньон")

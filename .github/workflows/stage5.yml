@@ -7,7 +7,7 @@ permissions:
 jobs:
   widgets:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v4
       - name: Validate model and content
@@ -20,7 +20,7 @@ jobs:
           mkdir -p evidence
           xcodebuild -version | tee evidence/xcode.txt
           xcrun simctl list devices available -j > evidence/devices.json
-          device=$(python3 -c 'import json; d=json.load(open("evidence/devices.json"))["devices"]; print(next(v["udid"] for k in sorted(d,reverse=True) if ".iOS-" in k for v in d[k] if v["name"].startswith("iPhone")))')
+          device=$(python3 -c 'import json; d=json.load(open("evidence/devices.json"))["devices"]; print(next(v["udid"] for k in sorted(d,reverse=True) if k.endswith(".iOS-18-5") for v in d[k] if v["name"] == "iPhone 16"))')
           echo "DEVICE=$device" >> "$GITHUB_ENV"
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
@@ -28,11 +28,12 @@ jobs:
           ruby Scripts/stage5/prepare.rb
       - name: Exercise installed widget on Home Screen
         run: |
+          xcrun simctl io "$DEVICE" screenshot evidence/booted.png
           xcrun simctl io "$DEVICE" recordVideo evidence/widget.mp4 &
           recorder=$!
-          trap 'kill -INT "$recorder" 2>/dev/null || true; wait "$recorder" || true' EXIT
+          trap 'xcrun simctl io "$DEVICE" screenshot evidence/last-screen.png || true; kill -INT "$recorder" 2>/dev/null || true; wait "$recorder" || true' EXIT
           set -o pipefail
-          xcodebuild test -project MyCompanion.xcodeproj -scheme Stage5 -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -resultBundlePath evidence/Widget.xcresult 2>&1 | tee evidence/xcodebuild.log
+          xcodebuild test -project MyCompanion.xcodeproj -scheme Stage5 -destination "platform=iOS Simulator,id=$DEVICE" ONLY_ACTIVE_ARCH=YES -parallel-testing-enabled NO -resultBundlePath evidence/Widget.xcresult 2>&1 | tee evidence/xcodebuild.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
