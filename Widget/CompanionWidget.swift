@@ -31,6 +31,12 @@ struct Settings: WidgetConfigurationIntent {
     @Parameter(title: "Показывать календарь", default: true) var showsCalendar: Bool
 }
 
+private func widgetMode(for preference: CompanionMode, process: ProcessInfo = .processInfo) -> CompanionMode {
+    if preference != .paused && process.thermalState == .critical { return .safe }
+    if preference == .normal && (process.isLowPowerModeEnabled || process.thermalState == .serious) { return .eco }
+    return preference
+}
+
 struct React: AppIntent {
     static var title: LocalizedStringResource = "Поговорить"
     @Parameter(title: "Персонаж") var heroID: String
@@ -44,9 +50,14 @@ struct React: AppIntent {
         try Store.shared().update { state in
             let primary = state.hero
             guard !follows || primary == target else { return }
+            let preference = state.mode
+            let effective = widgetMode(for: preference)
+            guard effective == .normal || effective == .eco else { return }
+            state.mode = effective
             state.hero = target
             state.react(source: .widgetIntent)
             state.hero = primary
+            state.mode = preference
         }
         return .result()
     }
@@ -58,6 +69,7 @@ struct Entry: TimelineEntry {
     let settings: Settings
     var display: Reaction?
     var available = true
+    var retryAfterCooling = false
 }
 
 struct Provider: AppIntentTimelineProvider {
@@ -66,24 +78,23 @@ struct Provider: AppIntentTimelineProvider {
     }
 
     func current(_ configuration: Settings, store: () throws -> Store = Store.shared,
+                 effectiveMode: (CompanionMode) -> CompanionMode = { widgetMode(for: $0) },
                  hasResources: (Hero) -> Bool = { hero in
                      hero.pack != nil && UIImage(named: "Characters/" + hero.rawValue + "/chibi.png") != nil
                  }) -> Entry {
         do {
-            let store = try store()
-            guard FileManager.default.fileExists(atPath: store.url.path) else { throw StoreError.unavailable }
-            var state = try store.read()
+            guard var state = try store().readIfPresent() else { throw StoreError.unavailable }
             if let fixed = Hero(rawValue: configuration.selection.rawValue) { state.hero = fixed }
             guard hasResources(state.hero) else { throw StoreError.unavailable }
-            let process = ProcessInfo.processInfo
-            if state.mode != .paused && process.thermalState == .critical { state.mode = .safe }
-            if state.mode == .normal && (process.isLowPowerModeEnabled || process.thermalState == .serious) { state.mode = .eco }
+            let preference = state.mode
+            state.mode = effectiveMode(preference)
             let calendarPrivacy: CalendarPrivacy = configuration.showsCalendar && state.mode != .safe && state.mode != .paused
                 ? .current : .off
             state.calendarSnapshot = state.calendarSnapshot.filtered(by: calendarPrivacy)
             let now = Date()
             return Entry(date: now, state: state, settings: configuration,
-                         display: DayTimeline.display(state, at: now, calendar: .current, showsTask: configuration.showsTask, channel: "widget"))
+                         display: DayTimeline.display(state, at: now, calendar: .current, showsTask: configuration.showsTask, channel: "widget"),
+                         retryAfterCooling: state.mode == .safe && (preference == .normal || preference == .eco))
         } catch {
             return Entry(date: Date(), state: Companion(), settings: configuration, available: false)
         }
@@ -101,7 +112,9 @@ struct Provider: AppIntentTimelineProvider {
     func timeline(for configuration: Settings, in context: Context) async -> Timeline<Entry> {
         let first = current(configuration)
         guard first.available, first.state.mode == .normal || first.state.mode == .eco else {
-            return Timeline(entries: [first], policy: .never)
+            // WidgetKit can re-evaluate transient thermal restrictions after a quiet Eco interval.
+            let policy: TimelineReloadPolicy = first.retryAfterCooling ? .after(first.date.addingTimeInterval(2 * 3600)) : .never
+            return Timeline(entries: [first], policy: policy)
         }
         let calendar = Calendar.current
         var scheduled = Set(DayTimeline.dates(from: first.date, state: first.state, calendar: calendar))
@@ -127,6 +140,7 @@ struct Provider: AppIntentTimelineProvider {
 struct WidgetScene: View {
     @Environment(\.widgetFamily) private var family
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     let entry: Entry
     private var line: Reaction { entry.display ?? entry.state.reaction }
     private var symbol: String { entry.state.hero.sceneSymbol }
@@ -145,13 +159,13 @@ struct WidgetScene: View {
 
     @ViewBuilder private var homeFigure: some View {
         let model = CompanionFigure(hero: entry.state.hero, emotion: line.emotion, daytimePose: line.daytimePose)
-        if entry.state.hero == .jinwoo && entry.state.mode == .normal && (family == .systemMedium || family == .systemLarge) {
+        if animates && entry.state.hero == .jinwoo && (family == .systemMedium || family == .systemLarge) {
             ShadowSummon(figure: model, contact: entry.state.contact.flatMap { $0.response == line.id ? $0.date : nil }, animate: animates)
         } else if entry.state.hero == .maomao {
             model.aspectRatio(1, contentMode: .fit)
                 .scaleEffect(family == .systemSmall ? 1.42 : 1, anchor: .top)
                 .clipped()
-        } else if entry.state.hero == .toji && (family == .systemMedium || family == .systemLarge) {
+        } else if animates && entry.state.hero == .toji && (family == .systemMedium || family == .systemLarge) {
             ZStack {
                 if let contact = entry.state.contact, contact.response == line.id {
                     TojiSpirit(progress: 1)
@@ -167,7 +181,7 @@ struct WidgetScene: View {
             }
             .scaleEffect(family == .systemMedium ? 1.14 : 1)
             .animation(animates ? .linear(duration: 1.38) : nil, value: entry.state.contact?.date)
-        } else if entry.state.hero == .sukuna && (family == .systemMedium || family == .systemLarge) {
+        } else if animates && entry.state.hero == .sukuna && (family == .systemMedium || family == .systemLarge) {
             ZStack {
                 if let contact = entry.state.contact, contact.response == line.id {
                     Color.clear.modifier(SukunaExpression(progress: 1))
@@ -212,13 +226,16 @@ struct WidgetScene: View {
                 AccessoryWidgetBackground()
                 CompanionFigure(hero: entry.state.hero, emotion: line.emotion, daytimePose: line.daytimePose)
                     .contrast(1.18).padding(1)
-            }.accessibilityLabel(entry.state.hero.name)
+            }.accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(entry.state.hero.name))
         case .accessoryInline:
             Label(entry.state.hero.name, systemImage: symbol)
         case .accessoryRectangular:
             HStack(spacing: 4) {
-                CompanionFigure(hero: entry.state.hero, emotion: line.emotion, daytimePose: line.daytimePose)
-                    .frame(width: 40, height: 46)
+                if !typeSize.isAccessibilitySize {
+                    CompanionFigure(hero: entry.state.hero, emotion: line.emotion, daytimePose: line.daytimePose)
+                        .frame(width: 40, height: 46)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.state.hero.name).font(.headline).lineLimit(1)
                     Text(speech.isEmpty ? line.action : (entry.state.hero.pack?.byID[line.id]?.shortText ?? speech))
@@ -243,6 +260,7 @@ struct WidgetScene: View {
                         Text(entry.state.hero.pack?.byID[line.id]?.shortText ?? speech)
                             .font(.caption).foregroundStyle(.black).lineLimit(3)
                             .padding(4).background(.white, in: RoundedRectangle(cornerRadius: 6))
+                            .accessibilityLabel(Text(speech))
                     }
                 }
             }
@@ -264,11 +282,21 @@ struct WidgetScene: View {
                     }.widgetCaptionBackground()
                     if !speech.isEmpty { bubble }
                 }
-                if showsPortal {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.state.hero.name).font(.headline).lineLimit(1).widgetCaptionBackground()
+                        if !speech.isEmpty {
+                            Text(entry.state.hero.pack?.byID[line.id]?.shortText ?? speech)
+                                .font(.caption).lineLimit(2).padding(4)
+                                .foregroundStyle(.black).background(.white, in: RoundedRectangle(cornerRadius: 6))
+                                .accessibilityLabel(Text(speech))
+                        }
+                    }
+                } else if showsPortal {
                     CompanionPortalScene(hero: entry.state.hero, right: portalOnRight, figure: figure, caption: caption)
                 } else {
                     HStack(spacing: 8) {
-                        if entry.state.hero == .gojo,
+                        if animates, entry.state.hero == .gojo,
                            let contact = entry.state.contact, contact.response == line.id,
                            line.emotion != .sleepy {
                             GojoGaze(progress: 1)
@@ -279,7 +307,7 @@ struct WidgetScene: View {
                                 .frame(maxWidth: family == .systemLarge ? 172 : 124,
                                        maxHeight: family == .systemLarge ? 190 : 126)
                                 .animation(animates ? .linear(duration: 1.4) : nil, value: contact.date)
-                        } else if entry.state.hero == .jinshi {
+                        } else if animates && entry.state.hero == .jinshi {
                             figure.overlay {
                                 ZStack {
                                     if let contact = entry.state.contact, contact.response == line.id {
@@ -306,8 +334,8 @@ struct WidgetScene: View {
                             Image(systemName: "calendar")
                             Text(event.start, format: .dateTime.day().month())
                             Text(event.timeLabel)
-                            Text(event.label).privacySensitive()
-                        }.font(.caption2).lineLimit(1).widgetCaptionBackground()
+                            Text(event.label)
+                        }.font(.caption2).lineLimit(1).widgetCaptionBackground().privacySensitive()
                     }
                 }
                 if (family == .systemMedium || family == .systemLarge), entry.settings.showsTask,
@@ -325,9 +353,11 @@ struct WidgetScene: View {
     private func actionLabel(_ title: String, _ icon: String) -> some View {
         VStack(spacing: 2) {
             Image(systemName: icon)
-            Text(title).font(.caption2.bold())
+            if !typeSize.isAccessibilitySize { Text(title).font(.caption2.bold()) }
         }.foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 44)
             .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 11))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(title))
     }
 
     var body: some View {

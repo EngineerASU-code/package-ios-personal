@@ -155,6 +155,35 @@ final class CompanionTests: XCTestCase {
         let expired = CompanionEvent(id: UUID(), source: .localSchedule, kind: .reminderDue, date: later.addingTimeInterval(-20))
         XCTAssertFalse(state.handle([expired], at: later.addingTimeInterval(5), calendar: utc, using: &rng))
         XCTAssertEqual(state.contact, before)
+        let correctedClock = later.addingTimeInterval(-60)
+        let pause = CompanionEvent(id: UUID(), source: .app, kind: .pauseChanged,
+                                   date: correctedClock, newMode: .paused)
+        XCTAssertFalse(state.handle([pause], at: correctedClock.addingTimeInterval(1), calendar: utc, using: &rng))
+        XCTAssertEqual(state.mode, .paused)
+        XCTAssertEqual(state.contact, before)
+    }
+
+    func testResumeRestoresPersistedModeAndSupportsLegacyPausedSnapshot() throws {
+        for previous in [CompanionMode.normal, .eco, .safe] {
+            var state = Companion()
+            state.setMode(previous, at: noon)
+            state.reminders = [LocalReminder(title: "Оставить задачу")]
+            state.setMode(.paused, at: noon)
+            state.setMode(.paused, at: noon)
+            let data = try JSONEncoder().encode(state)
+            var restored = try JSONDecoder().decode(Companion.self, from: data)
+            restored.resume(at: noon)
+            XCTAssertEqual(restored.mode, previous)
+            XCTAssertEqual(restored.reminders, state.reminders)
+            let resumed = restored
+            restored.resume(at: noon)
+            XCTAssertEqual(restored, resumed)
+        }
+        var legacy = Companion()
+        legacy.mode = .paused
+        var restored = try JSONDecoder().decode(Companion.self, from: JSONEncoder().encode(legacy))
+        restored.resume(at: noon)
+        XCTAssertEqual(restored.mode, .normal)
     }
 
     func testBehaviorConditionsAndDialogueFilters() throws {

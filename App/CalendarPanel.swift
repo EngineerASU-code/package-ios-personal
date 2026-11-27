@@ -113,7 +113,7 @@ final class CalendarController: ObservableObject {
                 let recentlyChecked = previous.isFresh(at: now) && previous.updatedAt.map { now.timeIntervalSince($0) < 900 } == true
                 let sameContent = previous.events == next.events && previous.overflow == next.overflow
                 if previous != next && !(privacy != .off && recentlyChecked && sameContent) {
-                    try store.update { $0.calendarSnapshot = next }
+                    try store.update { $0.replaceCalendarSnapshot(next, at: now) }
                     WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
                 } else {
                     snapshot = previous.filtered(by: privacy)

@@ -1,4 +1,6 @@
+import AppIntents
 import SwiftUI
+import WidgetKit
 import UIKit
 import UserNotifications
 
@@ -7,21 +9,65 @@ private struct NoticePreferences: Equatable {
     var morningTime, bedtimeTime, quietStart, quietEnd: Int
 }
 
+extension Notification.Name {
+    static let companionModeChanged = Notification.Name("MyCompanion.modeChanged")
+}
+
+@MainActor private func updatePause(_ pause: Bool) async throws {
+    let state = try Store.shared().update { state in
+        if pause { state.setMode(.paused) } else { state.resume() }
+    }
+    WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
+    NotificationCenter.default.post(name: .companionModeChanged, object: nil)
+    let defaults = UserDefaults.standard
+    let settings = NoticePreferences(
+        morning: defaults.bool(forKey: "companionMorningEnabled"),
+        bedtime: defaults.bool(forKey: "companionBedtimeEnabled"),
+        morningTime: defaults.object(forKey: "companionMorningTime") as? Int ?? 480,
+        bedtimeTime: defaults.object(forKey: "companionBedtimeTime") as? Int ?? 1365,
+        quietStart: defaults.object(forKey: "quietStartHour") as? Int ?? 23,
+        quietEnd: defaults.object(forKey: "quietEndHour") as? Int ?? 7
+    )
+    await CompanionNotices.shared.update(hero: state.hero, mode: state.mode, settings: settings)
+}
+
+struct PauseCompanionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Приостановить компаньона"
+    func perform() async throws -> some IntentResult {
+        try await updatePause(true)
+        return .result()
+    }
+}
+
+struct ResumeCompanionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Возобновить компаньона"
+    func perform() async throws -> some IntentResult {
+        try await updatePause(false)
+        return .result()
+    }
+}
+
 @MainActor private final class CompanionNotices: ObservableObject {
     static let shared = CompanionNotices()
     @Published var status = ""
-    private var running = false
+    private var running: Task<Void, Never>?
     private var latest: (Hero, CompanionMode, NoticePreferences)?
 
     func update(hero: Hero, mode: CompanionMode, settings: NoticePreferences) async {
         latest = (hero, mode, settings)
-        guard !running else { return }
-        running = true
-        defer { running = false }
-        while let (hero, mode, settings) = latest {
-            latest = nil
-            await apply(hero: hero, mode: mode, settings: settings)
+        if let running {
+            await running.value
+            return
         }
+        let pass = Task { @MainActor in
+            while let (hero, mode, settings) = latest {
+                latest = nil
+                await apply(hero: hero, mode: mode, settings: settings)
+            }
+            running = nil
+        }
+        running = pass
+        await pass.value
     }
 
     private func apply(hero: Hero, mode: CompanionMode, settings: NoticePreferences) async {
@@ -36,11 +82,20 @@ private struct NoticePreferences: Equatable {
                                       quietStart: settings.quietStart, quietEnd: settings.quietEnd)
         let slots = permitted && (mode == .normal || mode == .eco) ? plan.slots(hero: hero, now: now, calendar: calendar) : []
         let pending = await center.pendingNotificationRequests().filter { CompanionNoticeSlot.owns($0.identifier) }
+        if slots.isEmpty && !pending.isEmpty {
+            // An unreadable history must never keep disabled decorative alerts scheduled.
+            center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier))
+        }
         let defaults = UserDefaults.standard
         let ledgerKey = "companion.notice.budget.v2"
         var ledger = CompanionNoticeLedger()
         if let data = defaults.data(forKey: ledgerKey) {
             guard let saved = try? PropertyListDecoder().decode(CompanionNoticeLedger.self, from: data) else {
+                if slots.isEmpty, !pending.isEmpty,
+                   await center.pendingNotificationRequests().contains(where: { CompanionNoticeSlot.owns($0.identifier) }) {
+                    status = "Система пока не подтвердила отмену личных уведомлений."
+                    return
+                }
                 status = "Не удалось прочитать историю расписания."
                 return
             }
@@ -57,7 +112,7 @@ private struct NoticePreferences: Equatable {
         let desired = ledger.reconcile(now: now, pending: Set(pending.map(\.identifier)), slots: slots, calendar: calendar)
         let ids = Set(desired.map(\.id))
         let stale = pending.map(\.identifier).filter { !ids.contains($0) }
-        center.removePendingNotificationRequests(withIdentifiers: stale)
+        if !slots.isEmpty && !stale.isEmpty { center.removePendingNotificationRequests(withIdentifiers: stale) }
         ledger.entries = ledger.entries.filter { $0.value.spent || ids.contains($0.key) }
         let title = "Мой Компаньон · \(hero.name)"
         func matches(_ request: UNNotificationRequest, _ slot: CompanionNoticeSlot) -> Bool {

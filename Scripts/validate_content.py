@@ -35,7 +35,17 @@ for hero, name in roster.items():
     assert len(by_id) == len(rows) == 150
     assert Counter(r["category"] for r in rows) == counts
     assert [r["id"] for r in rows[:5]] == ["intro","pause","notice","aside","spark"]
-    actions = {a["id"]: a["label"] for a in load("behaviors.json")}
+    behaviors = load("behaviors.json")
+    actions = {a["id"]: a["label"] for a in behaviors}
+    states = {"idle", "greeting", "talking", "resting", "sleeping", "working",
+              "training", "exploring", "celebrating", "annoyed", "specialAction"}
+    assert len(actions) == len(behaviors), hero
+    assert all(a["from"] in states and a["to"] in states for a in behaviors), hero
+    reachable = {"idle"}
+    while added := {a["to"] for a in behaviors if a["from"] in reachable} - reachable:
+        reachable.update(added)
+    assert all(a["from"] in reachable for a in behaviors), hero
+    assert len({a["to"] for a in behaviors}) > 1, hero
     for row in rows:
         normalized = " ".join(unicodedata.normalize("NFC",row["text"]).casefold().split())
         assert normalized not in texts and re.search("[а-яё]", normalized), (hero, normalized)

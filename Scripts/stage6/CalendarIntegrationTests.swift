@@ -4,6 +4,31 @@ import UserNotifications
 @testable import MyCompanion
 
 final class CalendarIntegrationTests: XCTestCase {
+    func testRepeatedIntentCannotSnoozeOrCompleteANewerRevision() async throws {
+        let store = try Store.shared()
+        let task = LocalReminder(title: "Проверка команды", dueAt: Date().addingTimeInterval(3600), revision: 1)
+        try store.update { $0.reminders.append(task) }
+        defer { _ = try? store.update { $0.reminders.removeAll { $0.id == task.id } } }
+
+        var snooze = SnoozeReminderIntent()
+        snooze.occurrence = ReminderOccurrence(task: task)
+        _ = try await snooze.perform()
+        let afterSnooze = try XCTUnwrap(store.read().reminders.first { $0.id == task.id })
+        XCTAssertNotNil(afterSnooze.snoozedUntil)
+        _ = try await snooze.perform()
+        var complete = CompleteReminderIntent()
+        complete.occurrence = ReminderOccurrence(task: task)
+        _ = try await complete.perform()
+        XCTAssertEqual(try store.read().reminders.first { $0.id == task.id }, afterSnooze)
+
+        complete.occurrence = ReminderOccurrence(task: afterSnooze)
+        _ = try await complete.perform()
+        let afterComplete = try XCTUnwrap(store.read().reminders.first { $0.id == task.id })
+        XCTAssertNotNil(afterComplete.completedAt)
+        _ = try await complete.perform()
+        XCTAssertEqual(try store.read().reminders.first { $0.id == task.id }, afterComplete)
+    }
+
     func testSystemDeliveredReminder() async throws {
         let center = UNUserNotificationCenter.current()
         let delivered = await center.deliveredNotifications()

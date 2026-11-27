@@ -13,6 +13,22 @@ struct CalendarItem: Codable, Identifiable, Equatable {
     }
 }
 
+extension Companion {
+    mutating func replaceCalendarSnapshot(_ next: CalendarSnapshot, at date: Date) {
+        // Changing title visibility or refreshing the expiry is not a schedule change.
+        let previous = calendarSnapshot
+        calendarSnapshot = next
+        guard next.updatedAt != nil else { return }
+        let sameEvents = previous.events.elementsEqual(next.events) { old, new in
+            old.id == new.id && old.start == new.start && old.end == new.end && old.allDay == new.allDay &&
+                (old.title == nil || new.title == nil || old.title == new.title)
+        }
+        if !sameEvents || previous.overflow != next.overflow {
+            respond(to: .calendarChanged, at: date, source: .calendarSnapshot)
+        }
+    }
+}
+
 enum CalendarPrivacy: String {
     case off, privateTitles, titles
 

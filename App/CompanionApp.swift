@@ -30,6 +30,7 @@ struct Home: View {
     @AppStorage("quietEndHour") private var quietEndHour = 7
     @AppStorage("allowTasksDuringQuiet") private var allowTasksDuringQuiet = true
     @AppStorage("portraitForm") private var portrait = false
+    @AppStorage("didFinishWelcome") private var didFinishWelcome = false
     @State private var changingReminder = false
     @State private var selectedTab = 0
     private let notice = "mycompanion.preview"
@@ -38,7 +39,12 @@ struct Home: View {
             NavigationStack {
                 ScrollView {
                     VStack(spacing: 16) {
-                        Button { save { $0.react() } } label: {
+                        Button {
+                            let now = Date()
+                            if save({ $0.react(at: now) }), state.contact?.date == now {
+                                didFinishWelcome = true
+                            }
+                        } label: {
                             TimelineView(CompanionClock(state: state, active: phase == .active && selectedTab == 0)) { tick in
                                 let now = max(tick.date, Date())
                                 CompanionScene(state: state, date: now, display: sceneReaction(at: now), portrait: portrait)
@@ -48,12 +54,20 @@ struct Home: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Коснитесь, чтобы получить новую реплику")
+                        .accessibilityIdentifier("companion-interaction")
                         .disabled(state.mode == .safe || state.mode == .paused)
                         Picker("Форма героя", selection: $portrait) {
                             Text("Чиби").tag(false)
                             Text("Портрет").tag(true)
                         }.pickerStyle(.segmented)
                         heroPicker
+                        if !didFinishWelcome {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Знакомство с компаньоном").font(.headline)
+                                Text("Выберите героя и коснитесь его, чтобы увидеть реплику. Чтобы добавить его на экран «Домой», удерживайте свободное место и найдите «Мой Компаньон» в галерее виджетов.")
+                                Button("Пропустить знакомство") { didFinishWelcome = true }
+                            }
+                        }
                         modePicker
                         Button("Напомнить через минуту") { Task { await schedule() } }
                             .disabled(changingReminder)
@@ -112,6 +126,10 @@ struct Home: View {
             }
         }
         .modifier(CalendarRefresh())
+        .onReceive(NotificationCenter.default.publisher(for: .companionModeChanged)) { _ in
+            do { state = try Store.shared().read() }
+            catch { message = "Общее хранилище недоступно" }
+        }
         .companionNoticeReconciliation(hero: state.hero, mode: state.mode)
         .onChange(of: quietStartHour) { _, _ in refreshSchedules() }
         .onChange(of: quietEndHour) { _, _ in refreshSchedules() }
@@ -193,12 +211,16 @@ struct Home: View {
             }
         } catch { message = "Общее хранилище недоступно" }
     }
-    func save(_ change: (inout Companion) -> Void) {
+    @discardableResult func save(_ change: (inout Companion) -> Void) -> Bool {
         do {
             state = try Store.shared().update(change)
             WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
             message = ""
-        } catch { message = "Не удалось сохранить изменение" }
+            return true
+        } catch {
+            message = "Не удалось сохранить изменение"
+            return false
+        }
     }
     @MainActor func cancel() async {
         guard !changingReminder else { return }
@@ -235,7 +257,7 @@ private struct CharacterPreview: View {
     let selected: Bool
     let select: () -> Void
     @State private var emotion: ChibiEmotion = .neutral
-    @State private var portrait = false
+    @AppStorage("portraitForm") private var portrait = false
 
     var body: some View {
         ScrollView {

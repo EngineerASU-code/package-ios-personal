@@ -1,7 +1,7 @@
 name: Stage 5 widget simulator
 on:
   push:
-    branches: [ci/ios-widget-stage5, ci/ios-reminders-stage6, ci/ios-ui-stage7]
+    branches: [ci/ios-widget-stage5, ci/ios-reminders-stage6, ci/ios-ui-stage7, codex/ios-simulator-validation]
 permissions:
   contents: read
 jobs:

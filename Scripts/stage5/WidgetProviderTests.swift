@@ -123,6 +123,10 @@ final class WidgetProviderTests: XCTestCase {
             return false
         })
         XCTAssertFalse(noPack.available)
+        let hot = provider.current(primary, effectiveMode: { _ in .safe })
+        XCTAssertEqual(hot.state.mode, .safe)
+        XCTAssertTrue(hot.retryAfterCooling)
+        XCTAssertEqual(try store.read().mode, .normal)
         XCTAssertNil(noPack.display)
         let initial = provider.current(fixed)
         XCTAssertTrue(initial.available)
@@ -158,6 +162,7 @@ final class WidgetProviderTests: XCTestCase {
             let entry = provider.current(configuration)
             XCTAssertTrue(entry.available)
             XCTAssertEqual(entry.state.mode, .safe)
+            XCTAssertFalse(entry.retryAfterCooling)
         }
         XCTAssertNil(provider.current(primary).state.contact)
         XCTAssertEqual(provider.current(fixed).state.contact, fixedContact)

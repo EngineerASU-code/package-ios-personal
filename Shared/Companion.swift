@@ -346,6 +346,7 @@ struct Companion: Codable, Equatable {
     var reminders: [LocalReminder] = []
     var calendarSnapshot = CalendarSnapshot()
     var mode = CompanionMode.normal
+    private var modeBeforePause: CompanionMode?
     var hero = Hero.gojo
     private var histories: [String: [String]] = [:]
     private var activities: [String: HeroActivity] = [:]
@@ -362,7 +363,7 @@ struct Companion: Codable, Equatable {
     init() {}
 
     // Old snapshots stored Gojo's first three phrases by position.
-    private enum CodingKeys: String, CodingKey { case calendarSnapshot, mode, hero, histories, contacts, greetingDays, unlocks, reminders, activities, events }
+    private enum CodingKeys: String, CodingKey { case calendarSnapshot, mode, modeBeforePause, hero, histories, contacts, greetingDays, unlocks, reminders, activities, events }
     private enum LegacyKeys: String, CodingKey { case line, contact }
     init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
@@ -370,6 +371,7 @@ struct Companion: Codable, Equatable {
         events = try fields.decodeIfPresent([UUID: Date].self, forKey: .events) ?? [:]
         calendarSnapshot = try fields.decodeIfPresent(CalendarSnapshot.self, forKey: .calendarSnapshot) ?? CalendarSnapshot()
         mode = try fields.decode(CompanionMode.self, forKey: .mode)
+        modeBeforePause = try fields.decodeIfPresent(CompanionMode.self, forKey: .modeBeforePause)
         reminders = try fields.decodeIfPresent([LocalReminder].self, forKey: .reminders) ?? []
         unlocks = try fields.decodeIfPresent([Unlock].self, forKey: .unlocks) ?? []
         contacts = try fields.decodeIfPresent([String: Contact].self, forKey: .contacts) ?? [:]
@@ -456,6 +458,11 @@ struct Companion: Codable, Equatable {
         _ = handle([event], at: date, calendar: .current, using: &rng)
     }
 
+    mutating func resume(at date: Date = Date()) {
+        guard mode == .paused else { return }
+        setMode(modeBeforePause.flatMap { $0 == .paused ? nil : $0 } ?? .normal, at: date)
+    }
+
     mutating func respond(to kind: CompanionEvent.Kind, at date: Date = Date(), source: CompanionEvent.Source = .app) {
         var rng = SystemRandomNumberGenerator()
         let event = CompanionEvent(id: UUID(), source: source, kind: kind, date: date)
@@ -477,13 +484,17 @@ struct Companion: Codable, Equatable {
         }).first else { return false }
         events = events.filter { now.timeIntervalSince($0.value) < 300 }
         for candidate in valid { events[candidate.id] = candidate.date }
+        // A wall-clock adjustment must never prevent the user from pausing decoration.
+        if event.kind == .pauseChanged || event.kind == .safeModeChanged {
+            if let next = event.newMode, next != mode {
+                modeBeforePause = next == .paused ? mode : nil
+                mode = next
+            }
+            return false
+        }
         if let previous = activities[hero.rawValue], let priority = previous.lastPriority, let last = contact,
            now >= last.date, now.timeIntervalSince(last.date) < 2 && priority > event.kind.priority { return false }
         if let last = contact, event.date < last.date && event.date < now { return false }
-        if event.kind == .pauseChanged || event.kind == .safeModeChanged {
-            if let next = event.newMode { mode = next }
-            return false
-        }
         let pack = hero.pack
         var state = activity(at: event.date)
         let period = DayPeriod(hour: calendar.component(.hour, from: event.date))

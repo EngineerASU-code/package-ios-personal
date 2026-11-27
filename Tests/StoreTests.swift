@@ -32,6 +32,21 @@ final class StoreTests: XCTestCase {
         guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else { throw StoreError.database }
     }
 
+    func testOptionalReadDistinguishesAbsentEmptyLockedAndSavedSnapshot() throws {
+        XCTAssertNil(try store.readIfPresent())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.url.path))
+        let saved = try store.update { $0.hero = .toji }
+        XCTAssertEqual(try store.readIfPresent(), saved)
+        try connection { db in
+            try execute(db, "BEGIN EXCLUSIVE")
+            XCTAssertThrowsError(try store.readIfPresent())
+            try execute(db, "DELETE FROM snapshot")
+            try execute(db, "COMMIT")
+        }
+        XCTAssertNil(try store.readIfPresent())
+        XCTAssertEqual(try store.read(), Companion())
+    }
+
     func testLegacyMigrationAndCorruptSnapshotPreservation() throws {
         XCTAssertEqual(try store.read(), Companion())
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.url.path))

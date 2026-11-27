@@ -18,22 +18,64 @@ struct CreateLocalReminderIntent: AppIntent {
         guard !name.isEmpty else { throw $taskTitle.needsValueError("О чём напомнить?") }
         guard dueDate > Date() else { throw $dueDate.needsValueError("На какое время в будущем поставить напоминание?") }
 
-        try Store.shared().update { state in
-            guard !state.reminders.contains(where: {
-                $0.title == name && $0.dueAt == dueDate && $0.completedAt == nil &&
-                    $0.notificationEnabled && $0.recurrence == .once && $0.snoozedUntil == nil
-            }) else { return }
-            state.reminders.append(LocalReminder(title: name, dueAt: dueDate, notificationEnabled: true, revision: 1))
-            state.respond(to: .reminderCreated)
-        }
-        WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
-        let center = UNUserNotificationCenter.current()
-        if await center.notificationSettings().authorizationStatus == .notDetermined {
-            _ = try? await center.requestAuthorization(options: [.alert])
-        }
-        let status = await ReminderNotifications.shared.reconcile()
+        let status = try await ReminderNotifications.shared.create(title: name, due: dueDate)
         if status.isEmpty { return .result(dialog: "Напоминание сохранено.") }
         return .result(dialog: "Напоминание сохранено. \(status)")
+    }
+}
+
+struct ReminderOccurrence: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Локальная задача"
+    static let defaultQuery = ReminderOccurrenceQuery()
+    let task: LocalReminder
+    var id: String { task.id.uuidString + "." + String(task.revision) }
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\(task.title)", subtitle: "\(task.target?.formatted() ?? "Без срока")")
+    }
+}
+
+struct ReminderOccurrenceQuery: EntityQuery {
+    func suggestedEntities() async throws -> [ReminderOccurrence] {
+        try Store.shared().read().reminders.filter { $0.completedAt == nil }
+            .sorted { ($0.target ?? .distantFuture) < ($1.target ?? .distantFuture) }
+            .map { ReminderOccurrence(task: $0) }
+    }
+    func entities(for identifiers: [String]) async throws -> [ReminderOccurrence] {
+        let ids = Set(identifiers)
+        return try await suggestedEntities().filter { ids.contains($0.id) }
+    }
+}
+
+struct CompleteReminderIntent: AppIntent {
+    static var title: LocalizedStringResource = "Завершить локальную задачу"
+    @Parameter(title: "Задача") var occurrence: ReminderOccurrence
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let task = occurrence.task
+        let status = try await ReminderNotifications.shared.apply(id: task.id, revision: task.revision, snoozeMinutes: nil)
+        return .result(dialog: "\(status.isEmpty ? "Готово." : status)")
+    }
+}
+
+struct SnoozeReminderIntent: AppIntent {
+    static var title: LocalizedStringResource = "Отложить задачу на 10 минут"
+    @Parameter(title: "Задача") var occurrence: ReminderOccurrence
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let task = occurrence.task
+        let status = try await ReminderNotifications.shared.apply(id: task.id, revision: task.revision, snoozeMinutes: 10)
+        return .result(dialog: "\(status.isEmpty ? "Готово." : status)")
+    }
+}
+
+struct QuickReminderIntent: AppIntent {
+    static var title: LocalizedStringResource = "Напомнить о перерыве в 16 часов"
+    static var openAppWhenRun = true
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let due = Calendar.current.nextDate(after: Date(), matching: DateComponents(hour: 16, minute: 0, second: 0),
+                                                  matchingPolicy: .nextTime) else {
+            return .result(dialog: "Не удалось определить время перерыва.")
+        }
+        let status = try await ReminderNotifications.shared.create(title: "Перерыв", due: due, preset: true)
+        return .result(dialog: "\(status.isEmpty ? "Задача «Перерыв» есть в списке." : status)")
     }
 }
 
@@ -52,6 +94,22 @@ actor ReminderNotifications {
     private let prefix = "mycompanion.task."
     private var lastPass: Task<String, Never>?
 
+    func create(title: String, due: Date, preset: Bool = false) async throws -> String {
+        try Store.shared().update { state in
+            guard !state.reminders.contains(where: {
+                $0.title == title && $0.dueAt == due && $0.recurrence == .once &&
+                    (preset || ($0.completedAt == nil && $0.notificationEnabled && $0.snoozedUntil == nil))
+            }) else { return }
+            state.reminders.append(LocalReminder(title: title, dueAt: due, notificationEnabled: true, revision: 1))
+            state.respond(to: .reminderCreated)
+        }
+        WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
+        if await center.notificationSettings().authorizationStatus == .notDetermined {
+            _ = try? await center.requestAuthorization(options: [.alert])
+        }
+        return await reconcile()
+    }
+
     func reconcile() async -> String {
         let previous = lastPass
         let pass = Task {
@@ -63,17 +121,20 @@ actor ReminderNotifications {
     }
 
     @discardableResult func apply(id: UUID, revision: Int, snoozeMinutes: Int?) async throws -> String {
+        var applied = false
         try Store.shared().update { state in
             guard let i = state.reminders.firstIndex(where: { $0.id == id && $0.revision == revision }) else { return }
             let now = Date()
             if let minutes = snoozeMinutes { state.reminders[i].snooze(minutes: minutes, at: now) }
             else { state.reminders[i].complete(at: now) }
             if state.reminders[i].revision != revision {
+                applied = true
                 state.respond(to: snoozeMinutes == nil ? .reminderCompleted : .reminderSnoozed, at: now)
             }
         }
-        WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
-        return await reconcile()
+        if applied { WidgetCenter.shared.reloadTimelines(ofKind: "Companion") }
+        let status = await reconcile()
+        return applied || !status.isEmpty ? status : "Задача уже изменилась."
     }
 
     private func sync() async -> String {
@@ -122,8 +183,15 @@ actor ReminderNotifications {
                 do { try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) }
                 catch { failures += 1 }
             }
-            let verified = await center.pendingNotificationRequests()
-            if failures > 0 || !ids.isSubset(of: Set(verified.map(\.identifier))) {
+            let verified = await center.pendingNotificationRequests().filter { $0.identifier.hasPrefix(prefix) }
+            let matchesPlan = desired.allSatisfy { task, date in
+                verified.contains { request in
+                    request.identifier == prefix + task.id.uuidString &&
+                    request.content.userInfo["revision"] as? Int == task.revision &&
+                    request.content.userInfo["fireTime"] as? Int == Int(date.timeIntervalSince1970)
+                }
+            }
+            if failures > 0 || !matchesPlan || Set(verified.map(\.identifier)) != ids {
                 return "Часть уведомлений не поставлена в очередь. Проверьте разрешение и обновите расписание."
             }
             if !allowed && !dates.isEmpty { return "Задачи сохранены. Для уведомлений требуется разрешение в настройках iOS." }

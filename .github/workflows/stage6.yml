@@ -2,7 +2,7 @@ name: Stage 6 local reminders
 on:
   push:
     paths-ignore: ['Scripts/stage5/WidgetUITests.swift']
-    branches: [ci/ios-reminders-stage6, ci/ios-ui-stage7]
+    branches: [ci/ios-reminders-stage6, ci/ios-ui-stage7, codex/ios-simulator-validation]
 permissions:
   contents: read
 jobs:
@@ -36,9 +36,9 @@ jobs:
           set -o pipefail
           xcodebuild test -project MyCompanion.xcodeproj -scheme Reminders -destination "platform=iOS Simulator,id=$DEVICE" ONLY_ACTIVE_ARCH=YES -parallel-testing-enabled NO -only-testing:"WidgetUITests/ReminderUITests/$TEST" -resultBundlePath Reminder.xcresult 2>&1 | tee xcodebuild.log
       - name: Verify records held by EventKit or Notification Center
-        if: matrix.test == 'testCalendarPrivacy' || matrix.test == 'testScheduleReplaceCancel'
+        if: matrix.test == 'testCalendarPrivacy' || matrix.test == 'testScheduleReplaceCancel' || matrix.test == 'testCreateAndCompleteTask'
         env:
-          CASE: ${{ matrix.test == 'testCalendarPrivacy' && 'testSnapshotPrivacyAndWithdrawal' || 'testSystemDeliveredReminder' }}
+          CASE: ${{ matrix.test == 'testCalendarPrivacy' && 'testSnapshotPrivacyAndWithdrawal' || matrix.test == 'testCreateAndCompleteTask' && 'testRepeatedIntentCannotSnoozeOrCompleteANewerRevision' || 'testSystemDeliveredReminder' }}
         run: |
           set -o pipefail
           xcodebuild test -project MyCompanion.xcodeproj -scheme Reminders -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -only-testing:"WidgetProviderTests/CalendarIntegrationTests/$CASE" -resultBundlePath Calendar.xcresult 2>&1 | tee calendar-test.log

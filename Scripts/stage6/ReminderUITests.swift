@@ -21,6 +21,10 @@ final class ReminderUITests: XCTestCase {
     func testCreateAndCompleteTask() {
         continueAfterFailure = false
         app.launch()
+        let skipWelcome = app.buttons["Пропустить знакомство"]
+        XCTAssertTrue(skipWelcome.waitForExistence(timeout: 8))
+        app.buttons["companion-interaction"].tap()
+        XCTAssertFalse(skipWelcome.exists)
         app.buttons["Напоминания"].tap()
         app.buttons["Добавить"].tap()
         let title = app.descendants(matching: .any)["task-title"].firstMatch
@@ -31,6 +35,8 @@ final class ReminderUITests: XCTestCase {
         XCTAssertTrue(options.waitForExistence(timeout: 8))
         app.terminate()
         app.launch()
+        XCTAssertTrue(app.navigationBars["Мой Компаньон"].waitForExistence(timeout: 8))
+        XCTAssertFalse(skipWelcome.exists)
         app.buttons["Напоминания"].tap()
         options.tap()
         app.buttons["Выполнить"].tap()
@@ -71,6 +77,10 @@ final class ReminderUITests: XCTestCase {
             add(shot)
         }
         let tabs = app.tabBars.firstMatch
+        let skipWelcome = app.buttons["Пропустить знакомство"]
+        XCTAssertTrue(skipWelcome.waitForExistence(timeout: 8))
+        capture("Первое знакомство")
+        skipWelcome.tap()
         for name in ["Компаньон", "Календарь", "Напоминания", "Персонажи", "Настройки"] {
             let tab = tabs.buttons[name]
             XCTAssertTrue(tab.waitForExistence(timeout: 8))
@@ -90,8 +100,8 @@ final class ReminderUITests: XCTestCase {
             app.buttons[name].tap()
             capture("Мао Мао " + name)
         }
-        tabs.buttons["Компаньон"].tap()
         app.buttons["Портрет"].tap()
+        tabs.buttons["Компаньон"].tap()
         XCTAssertTrue(app.buttons["Портрет"].isSelected)
         capture("Портрет")
         app.buttons["Чиби"].tap()
@@ -103,6 +113,7 @@ final class ReminderUITests: XCTestCase {
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
         XCTAssertTrue(app.navigationBars["Мой Компаньон"].waitForExistence(timeout: 8))
+        XCTAssertFalse(skipWelcome.exists)
         capture("Компаньон крупный текст")
         let heroScene = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Сатору Годжо")).firstMatch
         XCTAssertTrue(heroScene.exists)

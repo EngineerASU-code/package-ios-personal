@@ -2,6 +2,38 @@ import XCTest
 @testable import CompanionCore
 
 final class CalendarSnapshotTests: XCTestCase {
+    func testCalendarChangeIgnoresIdenticalRefreshRedactionAndDisconnect() {
+        let now = Date()
+        let item = CalendarItem(id: "event", start: now, end: now.addingTimeInterval(60), allDay: false, title: "Встреча")
+        var schedule = CalendarSnapshot(updatedAt: now, expiry: now.addingTimeInterval(3600), events: [item])
+        var state = Companion()
+        var withoutEvent = state
+        withoutEvent.calendarSnapshot = schedule
+        state.replaceCalendarSnapshot(schedule, at: now)
+        XCTAssertNotEqual(state, withoutEvent)
+        var renamed = schedule
+        renamed.events[0].title = "Другое название"
+        var renameOnly = state
+        renameOnly.calendarSnapshot = renamed
+        state.replaceCalendarSnapshot(renamed, at: now)
+        XCTAssertNotEqual(state, renameOnly)
+        schedule = renamed
+        schedule.updatedAt = now.addingTimeInterval(900)
+        for next in [schedule, schedule.filtered(by: .privateTitles), CalendarSnapshot()] {
+            var expected = state
+            expected.calendarSnapshot = next
+            state.replaceCalendarSnapshot(next, at: now)
+            XCTAssertEqual(state, expected)
+        }
+        schedule.events = []
+        state.replaceCalendarSnapshot(schedule, at: now)
+        state.calendarSnapshot.events = [item]
+        var removed = state
+        removed.calendarSnapshot = schedule
+        state.replaceCalendarSnapshot(schedule, at: now)
+        XCTAssertNotEqual(state, removed)
+    }
+
     func testPrivacyRedactsHistoricalTitlesAndMissingConsentHidesAllEvents() {
         let now = Date()
         let item = CalendarItem(id: "id", start: now, end: now, allDay: false, title: "Private title")

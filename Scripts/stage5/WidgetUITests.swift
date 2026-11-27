@@ -35,7 +35,6 @@ final class WidgetUITests: XCTestCase {
         let reaction = home.buttons.matching(NSPredicate(format: "label CONTAINS %@", heroName)).firstMatch
         let target = reaction.waitForExistence(timeout: 8) ? reaction : widget
         capture("medium-before")
-        print("HOME BEFORE " + home.debugDescription)
         XCTAssertTrue(target.exists && target.frame.width > 130)
         let oldLabel = reaction.label
         target.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.44)).tap()
@@ -102,15 +101,7 @@ final class WidgetUITests: XCTestCase {
         let gallery = XCUIApplication(bundleIdentifier: "com.apple.PosterBoard")
         let surfaces = [settings, gallery, home]
 
-        defer {
-            capture("lock-accessory-final-state")
-            for surface in surfaces where surface.state != .notRunning {
-                let tree = XCTAttachment(string: surface.debugDescription)
-                tree.name = "Lock accessory accessibility tree " + surface.label
-                tree.lifetime = .keepAlways
-                add(tree)
-            }
-        }
+        defer { capture("lock-accessory-final-state") }
 
         func find(_ titles: [String], timeout: TimeInterval = 6) -> XCUIElement? {
             let deadline = Date().addingTimeInterval(timeout)
