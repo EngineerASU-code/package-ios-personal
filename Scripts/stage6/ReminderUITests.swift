@@ -83,6 +83,11 @@ final class ReminderUITests: XCTestCase {
             capture(name)
         }
         tabs.buttons["Компаньон"].tap()
+        app.buttons["Портрет"].tap()
+        XCTAssertTrue(app.buttons["Портрет"].isSelected)
+        capture("Портрет")
+        app.buttons["Чиби"].tap()
+        XCTAssertTrue(app.buttons["Чиби"].isSelected)
         app.buttons["Галерея находок"].tap()
         XCTAssertTrue(app.navigationBars["Галерея находок"].waitForExistence(timeout: 5))
         capture("Галерея")

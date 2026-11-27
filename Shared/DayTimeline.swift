@@ -37,7 +37,7 @@ extension Hero {
         case .sukuna: text = "Утро уже здесь. Что ж, пусть входит."
         case .maomao: text = "Доброе утро. На листьях ещё роса."
         }
-        return Reaction("greeting", text, "Приветствует")
+        return Reaction("greeting", text, "Приветствует", emotion: .happy)
     }
 }
 
@@ -78,10 +78,10 @@ enum DayTimeline {
         let index = ((slot + seed) % lines.count + lines.count) % lines.count
         if period == .night || period == .lateNight {
             let action = period == .night ? "Готовится ко сну" : "Спит"
-            return Reaction("sleep", "", "\(period.caption) · \(action)")
+            return Reaction("sleep", "", "\(period.caption) · \(action)", emotion: .sleepy)
         }
         let line = lines[index]
-        return Reaction(line.id, line.text, "\(period.caption) · \(line.action)")
+        return Reaction(line.id, line.text, "\(period.caption) · \(line.action)", emotion: line.emotion)
     }
 }
 

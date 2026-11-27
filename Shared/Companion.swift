@@ -4,12 +4,16 @@ enum CompanionMode: String, Codable, CaseIterable {
     case normal = "Обычный", eco = "Экономный", safe = "Безопасный", paused = "Пауза"
 }
 
+enum ChibiEmotion: String { case neutral, happy, sleepy, surprised }
+
 struct Reaction {
+    let emotion: ChibiEmotion
     let id: String
     let text: String
     let action: String
 
-    init(_ id: String, _ text: String, _ action: String) {
+    init(_ id: String, _ text: String, _ action: String, emotion: ChibiEmotion = .neutral) {
+        self.emotion = emotion
         self.id = id
         self.text = text
         self.action = action
@@ -58,7 +62,16 @@ final class CharacterPack {
         let triggers, channels, requires: [String]
         let weight: Int
         let shortText: String?
-        var reaction: Reaction { Reaction(id, text, action) }
+        var reaction: Reaction {
+            let emotion: ChibiEmotion
+            switch category {
+            case "night": emotion = .sleepy
+            case "compliment", "morning", "return": emotion = .happy
+            case "rare": emotion = .surprised
+            default: emotion = .neutral
+            }
+            return Reaction(id, text, action, emotion: emotion)
+        }
     }
 
     // A stable slot value keeps the chosen text unchanged during reconciliation.
@@ -237,8 +250,8 @@ struct Companion: Codable, Equatable {
             if let row = hero.pack?.byID[contact.response] { return row.reaction }
             switch contact.response {
             case "greeting": return hero.greeting
-            case "rest": return Reaction("rest", "Уже поздно. Пора отдыхать.", "Зевает")
-            case "quiet": return Reaction("quiet", "До утра. Пусть ночь будет спокойной.", "Прикрывает глаза")
+            case "rest": return Reaction("rest", "Уже поздно. Пора отдыхать.", "Зевает", emotion: .sleepy)
+            case "quiet": return Reaction("quiet", "До утра. Пусть ночь будет спокойной.", "Прикрывает глаза", emotion: .sleepy)
             default: break
             }
         }

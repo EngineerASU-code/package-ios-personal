@@ -1,1 +1,32 @@
-{"text":"original_adaptation","characterIP":"unverified","publicRelease":false,"art":[]}
+{
+  "text": "original_adaptation",
+  "characterIP": "unverified",
+  "publicRelease": false,
+  "art": [
+    {
+      "file": "chibi.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "portrait.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "chibi-happy.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "chibi-sleepy.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "chibi-surprised.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    }
+  ]
+}

@@ -14,6 +14,7 @@ struct Home: View {
     @AppStorage("quietStartHour") private var quietStartHour = 23
     @AppStorage("quietEndHour") private var quietEndHour = 7
     @AppStorage("allowTasksDuringQuiet") private var allowTasksDuringQuiet = true
+    @AppStorage("portraitForm") private var portrait = false
     @State private var changingReminder = false
     private let notice = "mycompanion.preview"
     var body: some View {
@@ -22,12 +23,16 @@ struct Home: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         Button { save { $0.react() } } label: {
-                            CompanionScene(state: state, display: DayTimeline.display(state, at: Date(), calendar: .current))
+                            CompanionScene(state: state, display: DayTimeline.display(state, at: Date(), calendar: .current), portrait: portrait)
                                 .frame(minHeight: 150)
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Коснитесь, чтобы получить новую реплику")
                         .disabled(state.mode == .safe || state.mode == .paused)
+                        Picker("Форма героя", selection: $portrait) {
+                            Text("Чиби").tag(false)
+                            Text("Портрет").tag(true)
+                        }.pickerStyle(.segmented)
                         heroPicker
                         modePicker
                         Button("Напомнить через минуту") { Task { await schedule() } }

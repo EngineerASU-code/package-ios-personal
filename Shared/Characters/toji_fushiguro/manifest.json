@@ -15,9 +15,9 @@
   "themeFile": "theme.json",
   "rightsFile": "rights.json",
   "easterEggFile": "easter_eggs.json",
-  "availableForms": [],
-  "plannedForms": [
+  "availableForms": [
     "chibi",
     "portrait"
-  ]
+  ],
+  "plannedForms": []
 }

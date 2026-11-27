@@ -12,10 +12,13 @@ extension Hero {
 struct CompanionScene: View {
     let state: Companion
     var display: Reaction? = nil
+    var portrait = false
+    @Environment(\.dynamicTypeSize) private var typeSize
     private var shown: Reaction { display ?? state.reaction }
     var body: some View {
-        HStack {
-            CompanionFigure(hero: state.hero).frame(width: 88, height: 102)
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
+            CompanionFigure(hero: state.hero, portrait: portrait, emotion: shown.emotion).frame(maxWidth: 148).frame(height: 168)
             VStack(alignment: .leading, spacing: 6) {
                 Text(state.hero.name).font(.headline)
                 Text(shown.action).font(.caption)
@@ -24,14 +27,27 @@ struct CompanionScene: View {
         }
         .foregroundStyle(.white).padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(LinearGradient(colors: [state.hero.sceneColor, Color(red: 0.08, green: 0.08, blue: 0.18)], startPoint: .topLeading, endPoint: .bottomTrailing))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .accessibilityElement(children: .combine)
+        .background(LinearGradient(colors: [state.hero.sceneColor.opacity(0.74), Color(red: 0.08, green: 0.08, blue: 0.18)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .background(Color.black).clipShape(RoundedRectangle(cornerRadius: 18))
     }
 }
 
 // Original development artwork. The supplied boards are composition references only.
 struct CompanionFigure: View {
     let hero: Hero
+
+    var portrait = false
+    var emotion: ChibiEmotion = .neutral
+
+    var body: some View {
+        let name = portrait ? "portrait" : (emotion == .neutral ? "chibi" : "chibi-" + emotion.rawValue)
+        if let illustration = UIImage(named: "Characters/" + hero.rawValue + "/" + name + ".png") {
+            Image(uiImage: illustration).resizable().scaledToFit().accessibilityHidden(true)
+        } else {
+            fallback
+        }
+    }
 
     private var hair: Color {
         switch hero {
@@ -44,7 +60,7 @@ struct CompanionFigure: View {
         }
     }
 
-    var body: some View {
+    private var fallback: some View {
         Canvas { context, size in
             let scale = min(size.width / 100, size.height / 116)
             context.translateBy(x: (size.width - 100 * scale) / 2, y: (size.height - 116 * scale) / 2)

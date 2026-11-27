@@ -137,6 +137,26 @@ struct WidgetScene: View {
 
     private var portalOnRight: Bool { entry.state.contact?.portalOnRight ?? false }
 
+    private var figure: some View {
+        ZStack {
+            if showsPortal {
+                Ellipse().strokeBorder(entry.state.hero.sceneColor.opacity(0.7), lineWidth: 2)
+                    .padding(.vertical, 4)
+            }
+            CompanionFigure(hero: entry.state.hero, emotion: line.emotion)
+        }
+            .frame(width: family == .systemSmall ? 48 : (family == .systemLarge ? 110 : 76),
+                   height: family == .systemSmall ? 50 : (family == .systemLarge ? 124 : 84))
+            .transition(.opacity)
+    }
+
+    private var bubble: some View {
+        Text(speech).font(.callout).padding(6)
+            .background(.background, in: RoundedRectangle(cornerRadius: 10))
+            .lineLimit(family == .systemSmall ? 3 : 5)
+            .contentTransition(animates ? .opacity : .identity)
+    }
+
     @ViewBuilder var scene: some View {
         switch family {
         case .accessoryCircular:
@@ -150,30 +170,16 @@ struct WidgetScene: View {
             }
         default:
             VStack(alignment: .leading, spacing: family == .systemSmall ? 4 : 10) {
-                if showsPortal {
-                    HStack(spacing: 8) {
-                        ZStack {
-                            Ellipse().strokeBorder(.secondary, lineWidth: 2)
-                            CompanionFigure(hero: entry.state.hero)
-                                .id(portalOnRight)
-                                .transition(.opacity)
-                        }
-                        .frame(width: 26, height: 30)
-                        .frame(width: 62, alignment: portalOnRight ? .trailing : .leading)
-                        .animation(.easeInOut(duration: 0.35), value: portalOnRight)
-                        .accessibilityHidden(true)
+                HStack(spacing: family == .systemSmall ? 4 : 10) {
+                    if !(showsPortal && portalOnRight) { figure }
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(entry.state.hero.name).font(.headline)
+                        if family != .systemSmall || speech.isEmpty { Text(line.action).font(.caption) }
+                        if !speech.isEmpty && family != .systemSmall { bubble }
                     }
-                } else {
-                    HStack { CompanionFigure(hero: entry.state.hero).frame(width: 32, height: 36); Text(entry.state.hero.name).font(.headline) }
+                    if showsPortal && portalOnRight { figure }
                 }
-                if family != .systemSmall || speech.isEmpty { Text(line.action).font(.caption) }
-                if !speech.isEmpty {
-                    Text(speech).font(.callout).padding(6)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-                        .lineLimit(family == .systemSmall ? 3 : 5)
-                        .contentTransition(animates ? .opacity : .identity)
-                }
+                if family == .systemSmall && !speech.isEmpty { bubble }
                 if family == .systemMedium || family == .systemLarge {
                     ForEach(entry.state.calendarSnapshot.upcoming(at: entry.date).prefix(family == .systemLarge ? 3 : 1)) { event in
                         HStack(spacing: 4) {
