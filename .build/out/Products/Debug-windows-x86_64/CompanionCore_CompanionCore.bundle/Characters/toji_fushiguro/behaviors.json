@@ -1,1 +1,0 @@
-[{"id":"intro","label":"Складывает руки","from":"idle","to":"talking"},{"id":"pause","label":"Разминается","from":"idle","to":"talking"},{"id":"notice","label":"Кивает","from":"idle","to":"talking"},{"id":"aside","label":"Зевает","from":"idle","to":"talking"},{"id":"spark","label":"Потягивается","from":"idle","to":"talking"}]

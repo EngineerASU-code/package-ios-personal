@@ -1,1 +1,0 @@
-[{"id":"intro","label":"Осматривается","from":"idle","to":"talking"},{"id":"pause","label":"Следит за тенью","from":"idle","to":"talking"},{"id":"notice","label":"Изучает след","from":"idle","to":"talking"},{"id":"aside","label":"Отдыхает","from":"idle","to":"talking"},{"id":"spark","label":"Кивает","from":"idle","to":"talking"}]
