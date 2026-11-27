@@ -1,0 +1,53 @@
+{
+  "text": "original_adaptation",
+  "characterIP": "unverified",
+  "publicRelease": false,
+  "art": [
+    {
+      "file": "chibi.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "portrait.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "chibi-happy.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "chibi-sleepy.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "chibi-surprised.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "scene.jpg",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "scene-day.jpg",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "scene-night.jpg",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "igris.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {"file": "chibi-daytime.png", "source": "Original generated artwork for local personal use", "publicRelease": false}
+  ]
+}

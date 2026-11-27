@@ -71,6 +71,20 @@ struct CalendarSnapshot: Codable, Equatable {
         return requests
     }
 
+    // Persist before submission so interruption cannot lead to a second alert for the day.
+    @MainActor static func registerWarning(_ key: String, at date: Date, ledger: inout [String: Date],
+                                           save: ([String: Date]) -> Void, add: () async throws -> Void) async throws {
+        ledger[key] = date
+        save(ledger)
+        do {
+            try await add()
+        } catch {
+            ledger.removeValue(forKey: key)
+            save(ledger)
+            throw error
+        }
+    }
+
     func isFresh(at date: Date) -> Bool {
         guard let updatedAt, let expiry else { return false }
         return updatedAt <= date && date < expiry

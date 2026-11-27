@@ -34,6 +34,32 @@ final class CalendarSnapshotTests: XCTestCase {
         XCTAssertTrue(plan(expiresAtFire, at: now, offset: 15, ledger: [:]).isEmpty)
     }
 
+    @MainActor func testFailedRegistrationReleasesReservationForRetry() async throws {
+        enum Rejected: Error { case request }
+        let now = Date(timeIntervalSince1970: 86400)
+        let start = now.addingTimeInterval(1800)
+        let item = CalendarItem(id: "event", start: start, end: start, allDay: false, title: nil)
+        let snapshot = CalendarSnapshot(updatedAt: now, expiry: start, events: [item])
+        var ledger: [String: Date] = [:]
+        var persisted: [String: Date] = [:]
+        func plan() -> [String: Date] {
+            snapshot.warningDates(now: now, offset: 15, quietStart: 0, quietEnd: 0,
+                                  calendar: Calendar(identifier: .gregorian), reservations: persisted)
+        }
+        let date = try XCTUnwrap(plan()[item.id])
+        do {
+            try await CalendarSnapshot.registerWarning(item.id, at: date, ledger: &ledger, save: { persisted = $0 }) {
+                XCTAssertEqual(persisted[item.id], date)
+                throw Rejected.request
+            }
+            XCTFail("Expected rejected notification request")
+        } catch Rejected.request {}
+        XCTAssertTrue(persisted.isEmpty)
+        let retry = try XCTUnwrap(plan()[item.id])
+        try await CalendarSnapshot.registerWarning(item.id, at: retry, ledger: &ledger, save: { persisted = $0 }) {}
+        XCTAssertEqual(persisted, [item.id: date])
+    }
+
     func testFreshnessAndFinishedEvents() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let expired = CalendarItem(id: "yesterday", start: now.addingTimeInterval(-900),

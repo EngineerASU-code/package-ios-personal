@@ -150,9 +150,13 @@ final class CalendarController: ObservableObject {
         // Reserve before registering with the OS. After an interruption an elapsed reservation
         // consumes its day even if Focus or system settings suppressed delivery.
         ledger = ledger.filter { $0.value <= now }
-        ledger.merge(events) { _, new in new }
+        for (key, fire) in events where owned.contains(prefix + key + ".\(offset)") {
+            ledger[key] = fire
+        }
         defaults.set(ledger, forKey: ledgerKey)
-        for (id, fire) in requests where !owned.contains(id) {
+        for (eventID, fire) in events {
+            let id = prefix + eventID + ".\(offset)"
+            guard !owned.contains(id) else { continue }
             let content = UNMutableNotificationContent()
             content.title = "Мой Компаньон"
             content.body = "Через \(offset) мин запланировано событие."
@@ -160,8 +164,12 @@ final class CalendarController: ObservableObject {
             date.timeZone = TimeZone(secondsFromGMT: 0)!
             let components = date.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: fire)
             let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            do { try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) }
-            catch { message = "Некоторые предупреждения не удалось запланировать." }
+            do {
+                try await CalendarSnapshot.registerWarning(eventID, at: fire, ledger: &ledger,
+                                                          save: { defaults.set($0, forKey: ledgerKey) }) {
+                    try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+                }
+            } catch { message = "Некоторые предупреждения не удалось запланировать." }
         }
 
         let applied = Set(await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) })

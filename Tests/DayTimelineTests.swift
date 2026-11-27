@@ -54,6 +54,45 @@ final class DayTimelineTests: XCTestCase {
         }
     }
 
+    func testThirtyVirtualDaysOfTimelineAndOneHundredInteractions() throws {
+        let cal = try calendar("America/New_York")
+        let start = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 10, day: 20, hour: 13)))
+        let heroes = Hero.allCases
+        var state = Companion()
+        let reminder = LocalReminder(title: "Закрытая задача")
+        state.reminders = [reminder]
+        for index in 0..<100 {
+            state.hero = heroes[(index + 1) % heroes.count]
+            let when = start.addingTimeInterval(Double(index * 8))
+            state.react(at: when, calendar: cal)
+            XCTAssertEqual(state.contact?.date, when)
+            XCTAssertEqual(state.contact?.hero, state.hero)
+            state = try JSONDecoder().decode(Companion.self, from: JSONEncoder().encode(state))
+            XCTAssertEqual(state.reminders, [reminder])
+        }
+        let plan = CompanionNoticePlan(morning: 480, bedtime: 1365, quietStart: 23, quietEnd: 7)
+        for day in 0..<30 {
+            let date = try XCTUnwrap(cal.date(byAdding: .day, value: day, to: start))
+            for mode in CompanionMode.allCases {
+                state.mode = mode
+                let original = state
+                let dates = DayTimeline.dates(from: date, state: state, calendar: cal)
+                XCTAssertEqual(dates, Array(Set(dates)).sorted())
+                XCTAssertEqual(dates.first, date)
+                XCTAssertLessThanOrEqual(dates.count, 15)
+                XCTAssertLessThanOrEqual(try XCTUnwrap(dates.last).timeIntervalSince(date), 12 * 3600)
+                if mode == .safe || mode == .paused { XCTAssertEqual(dates, [date]) }
+                for frame in dates {
+                    XCTAssertFalse(DayTimeline.display(state, at: frame, calendar: cal).text.contains(reminder.title))
+                }
+                XCTAssertEqual(state, original)
+            }
+            let slots = plan.slots(hero: state.hero, now: date, calendar: cal)
+            XCTAssertLessThanOrEqual(slots.count, 6)
+            XCTAssertEqual(Set(slots.map(\.id)).count, slots.count)
+        }
+    }
+
     func testLocalPeriods() {
         let periods: [DayPeriod] = [.lateNight, .dawn, .morning, .day, .evening, .night]
         for (hour, expected) in zip([0, 5, 8, 12, 18, 22], periods) {
@@ -90,7 +129,12 @@ final class DayTimelineTests: XCTestCase {
         let baseline = state
         let night = dawn.addingTimeInterval(-3600)
         XCTAssertEqual(DayTimeline.display(state, at: night, calendar: cal).text, "")
-        XCTAssertNotEqual(DayTimeline.display(state, at: dawn, calendar: cal).id, "greeting")
+        // Passive frames never dispatch scheduledGreeting (§16). Only real contact consumes it.
+        for offset in 0..<13 {
+            let frame = DayTimeline.display(state, at: dawn.addingTimeInterval(Double(offset * 3600)), calendar: cal)
+            let record = try XCTUnwrap(state.hero.pack?.byID[frame.id])
+            XCTAssertNotEqual(record.category, "morning")
+        }
         XCTAssertEqual(state, baseline)
         state.react(at: dawn, calendar: cal)
         XCTAssertEqual(state.hero.pack?.byID[DayTimeline.display(state, at: dawn, calendar: cal).id]?.category, "morning")

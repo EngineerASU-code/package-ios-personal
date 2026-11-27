@@ -7,9 +7,24 @@ import UserNotifications
     var body: some Scene { WindowGroup { Home() } }
 }
 
+private struct CompanionClock: TimelineSchedule {
+    let state: Companion
+    let active: Bool
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnySequence<Date> {
+        guard active, state.mode == .normal || state.mode == .eco else {
+            return AnySequence([startDate])
+        }
+        return AnySequence(sequence(first: startDate) { current in
+            DayTimeline.dates(from: current, state: state, calendar: .current).dropFirst().first
+        })
+    }
+}
+
 struct Home: View {
     @Environment(\.scenePhase) private var phase
     @State private var state = Companion()
+    @ObservedObject private var calendarController = CalendarController.shared
     @State private var message = ""
     @AppStorage("quietStartHour") private var quietStartHour = 23
     @AppStorage("quietEndHour") private var quietEndHour = 7
@@ -24,9 +39,12 @@ struct Home: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         Button { save { $0.react() } } label: {
-                            let now = Date()
-                            CompanionScene(state: state, date: now, display: DayTimeline.display(state, at: now, calendar: .current), portrait: portrait)
-                                .frame(minHeight: 150)
+                            TimelineView(CompanionClock(state: state, active: phase == .active && selectedTab == 0)) { tick in
+                                let now = max(tick.date, Date())
+                                CompanionScene(state: state, date: now, display: sceneReaction(at: now), portrait: portrait)
+                                    .frame(minHeight: 150)
+                            }
+                            .id(state.contact?.date)
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Коснитесь, чтобы получить новую реплику")
@@ -81,7 +99,7 @@ struct Home: View {
                     modePicker
                     NavigationLink("Уведомления и тихие часы") { CompanionNoticePanel() }
                     NavigationLink("Как добавить виджет") {
-                        Text("Удерживайте свободное место на экране «Домой», откройте галерею виджетов и найдите «Мой Компаньон». После добавления удерживайте виджет, чтобы выбрать героя.").padding().navigationTitle("Виджет")
+                        Text("Удерживайте свободное место на экране «Домой», откройте галерею виджетов и найдите «Мой Компаньон». Выберите героя на вкладке «Компаньон». Виджет с настройкой «Как в приложении» покажет его на домашнем экране. Настроение и реплики меняются сами. Коснитесь героя, чтобы он ответил.").padding().navigationTitle("Виджет")
                     }
                 }.navigationTitle("Настройки")
             }.tabItem { Label("Настройки", systemImage: "gearshape") }.tag(4)
@@ -101,8 +119,14 @@ struct Home: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
             if phase == .active { refreshSchedules() }
         }
-        .onAppear { refresh() }.onChange(of: phase) { _, next in if next == .active { refresh() } }
+        .onAppear { refresh(.appOpened) }.onChange(of: phase) { _, next in if next == .active { refresh(.foregrounded) } }
     }
+    private func sceneReaction(at date: Date) -> Reaction {
+        var current = state
+        current.calendarSnapshot = calendarController.snapshot
+        return DayTimeline.display(current, at: date, calendar: .current)
+    }
+
     private var heroPicker: some View {
         Picker("Персонаж", selection: Binding(get: { state.hero }, set: select)) {
             ForEach(Hero.allCases, id: \.self) { Text($0.name).tag($0) }
@@ -110,7 +134,7 @@ struct Home: View {
     }
 
     private var modePicker: some View {
-        Picker("Режим", selection: Binding(get: { state.mode }, set: { mode in save { $0.mode = mode } })) {
+        Picker("Режим", selection: Binding(get: { state.mode }, set: { mode in save { $0.setMode(mode) } })) {
             ForEach(CompanionMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
         }
     }
@@ -118,7 +142,7 @@ struct Home: View {
     private func select(_ hero: Hero) {
         save {
             $0.hero = hero
-            _ = $0.greetIfNeeded(at: Date(), calendar: .current)
+            _ = $0.appContact(.characterSelected, at: Date(), calendar: .current)
         }
     }
 
@@ -155,7 +179,7 @@ struct Home: View {
             _ = await ReminderNotifications.shared.reconcile()
         }
     }
-    func refresh() {
+    func refresh(_ kind: CompanionEvent.Kind) {
         Task { _ = await ReminderNotifications.shared.reconcile() }
         do {
             let store = try Store.shared()
@@ -163,8 +187,8 @@ struct Home: View {
             let date = Date()
             let calendar = Calendar.current
             var preview = state
-            if preview.greetIfNeeded(at: date, calendar: calendar) {
-                state = try store.update { _ = $0.greetIfNeeded(at: date, calendar: calendar) }
+            if preview.appContact(kind, at: date, calendar: calendar) {
+                state = try store.update { _ = $0.appContact(kind, at: date, calendar: calendar) }
                 WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
             }
         } catch { message = "Общее хранилище недоступно" }

@@ -14,6 +14,11 @@ final class NotificationActions: NSObject, UIApplicationDelegate, UNUserNotifica
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .list]
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse) async {
         let content = response.notification.request.content
         guard content.categoryIdentifier == "MYCOMPANION_TASK",

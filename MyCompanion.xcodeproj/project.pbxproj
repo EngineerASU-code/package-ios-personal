@@ -1,5 +1,9 @@
 // !$*UTF8*$!
 { archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+000000000000000000000072 = { isa = PBXFileReference; lastKnownFileType = text.xml; path = "App/PrivacyInfo.xcprivacy"; sourceTree = "<group>"; };
+000000000000000000000073 = { isa = PBXBuildFile; fileRef = 000000000000000000000072; };
+000000000000000000000074 = { isa = PBXFileReference; lastKnownFileType = text.xml; path = "Widget/PrivacyInfo.xcprivacy"; sourceTree = "<group>"; };
+000000000000000000000075 = { isa = PBXBuildFile; fileRef = 000000000000000000000074; };
 000000000000000000000070 = { isa = PBXFileReference; explicitFileType = sourcecode.swift; path = "Shared/CompanionNoticePlan.swift"; sourceTree = "<group>"; };
 000000000000000000000071 = { isa = PBXBuildFile; fileRef = 000000000000000000000070; };
 00000000000000000000006c = { isa = PBXFileReference; explicitFileType = sourcecode.swift; path = "Shared/CalendarSnapshot.swift"; sourceTree = "<group>"; };
@@ -16,8 +20,8 @@
 000000000000000000000041 = { isa = PBXFileReference; lastKnownFileType = folder; path = "Shared/Characters"; sourceTree = "<group>"; };
 000000000000000000000042 = { isa = PBXBuildFile; fileRef = 000000000000000000000041; };
 000000000000000000000043 = { isa = PBXBuildFile; fileRef = 000000000000000000000041; };
-000000000000000000000044 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000042); runOnlyForDeploymentPostprocessing = 0; };
-000000000000000000000045 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000043); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000044 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000042, 000000000000000000000075); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000045 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000043, 000000000000000000000073); runOnlyForDeploymentPostprocessing = 0; };
 000000000000000000000031 = { isa = PBXFileReference; explicitFileType = sourcecode.swift; path = "Shared/DayTimeline.swift"; sourceTree = "<group>"; };
 000000000000000000000032 = { isa = PBXBuildFile; fileRef = 000000000000000000000031; };
 000000000000000000000033 = { isa = PBXBuildFile; fileRef = 000000000000000000000031; };
@@ -29,7 +33,7 @@
 000000000000000000000006 = { isa = PBXFileReference; explicitFileType = wrapper.application; path = "MyCompanion.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 000000000000000000000007 = { isa = PBXFileReference; explicitFileType = wrapper.app-extension; path = "CompanionWidget.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 000000000000000000000008 = { isa = PBXGroup; children = (000000000000000000000006, 000000000000000000000007); name = Products; sourceTree = "<group>"; };
-000000000000000000000009 = { isa = PBXGroup; children = (000000000000000000000070, 00000000000000000000006c, 000000000000000000000069, 000000000000000000000066, 000000000000000000000063, 000000000000000000000060, 000000000000000000000041, 000000000000000000000031, 000000000000000000000001, 000000000000000000000002, 000000000000000000000003, 000000000000000000000004, 000000000000000000000005, 000000000000000000000008); sourceTree = "<group>"; };
+000000000000000000000009 = { isa = PBXGroup; children = (000000000000000000000072, 000000000000000000000074, 000000000000000000000070, 00000000000000000000006c, 000000000000000000000069, 000000000000000000000066, 000000000000000000000063, 000000000000000000000060, 000000000000000000000041, 000000000000000000000031, 000000000000000000000001, 000000000000000000000002, 000000000000000000000003, 000000000000000000000004, 000000000000000000000005, 000000000000000000000008); sourceTree = "<group>"; };
 00000000000000000000000a = { isa = XCBuildConfiguration; name = Debug; buildSettings = { PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = local.mycompanion.widget; INFOPLIST_FILE = Widget/Info.plist; CODE_SIGN_ENTITLEMENTS = Shared/Companion.entitlements; APPLICATION_EXTENSION_API_ONLY = YES; SKIP_INSTALL = YES; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; };
 00000000000000000000000b = { isa = XCBuildConfiguration; name = Release; buildSettings = { PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = local.mycompanion.widget; INFOPLIST_FILE = Widget/Info.plist; CODE_SIGN_ENTITLEMENTS = Shared/Companion.entitlements; APPLICATION_EXTENSION_API_ONLY = YES; SKIP_INSTALL = YES;  }; };
 00000000000000000000000c = { isa = XCConfigurationList; buildConfigurations = (00000000000000000000000a, 00000000000000000000000b); defaultConfigurationName = Release; defaultConfigurationIsVisible = 0; };

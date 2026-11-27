@@ -89,7 +89,9 @@ struct CompanionNoticePlan {
                 let id = "companion.\(category).\(key)"
                 let seed = (id + hero.rawValue).utf8.reduce(UInt64(14695981039346656037)) { ($0 ^ UInt64($1)) &* 1099511628211 }
                 let trigger = isMorning ? "scheduledGreeting" : "bedtimeReminder"
-                guard let line = CharacterPack.notificationLine(in: pack.records, trigger: trigger, facts: [], slot: seed) else { continue }
+                guard let line = CharacterPack.notificationLine(in: pack.records, trigger: trigger, facts: [], slot: seed,
+                                                                mood: pack.disposition.defaultMood, intensity: pack.personality.intensity,
+                                                                period: DayPeriod(hour: hour)) else { continue }
                 slots.append(CompanionNoticeSlot(id: id, category: "companion.\(category)",
                                                  body: line.shortText ?? line.text, date: date))
             }

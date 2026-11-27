@@ -1,0 +1,23 @@
+{
+  "id": "sung_jinwoo",
+  "displayName": "Сон Джин Ву",
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "locale": "ru",
+  "defaultMood": "focused",
+  "minimumDialogueCount": 100,
+  "targetDialogueCount": 150,
+  "dialogueFile": "dialogue.ru.json",
+  "personalityFile": "personality.json",
+  "behaviorFile": "behaviors.json",
+  "emotionsFile": "emotions.json",
+  "animationsFile": "animations.json",
+  "themeFile": "theme.json",
+  "rightsFile": "rights.json",
+  "easterEggFile": "easter_eggs.json",
+  "availableForms": [
+    "chibi",
+    "portrait"
+  ],
+  "plannedForms": []
+}

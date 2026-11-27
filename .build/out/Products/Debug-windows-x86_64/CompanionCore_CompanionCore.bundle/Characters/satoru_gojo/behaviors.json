@@ -1,0 +1,1 @@
+[{"id":"intro","label":"Поправляет повязку","from":"idle","to":"talking"},{"id":"pause","label":"Подмигивает","from":"idle","to":"talking"},{"id":"notice","label":"Улыбается","from":"idle","to":"talking"},{"id":"aside","label":"Достаёт сладость","from":"idle","to":"talking"},{"id":"spark","label":"Приподнимает очки","from":"idle","to":"talking"}]

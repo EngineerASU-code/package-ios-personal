@@ -42,6 +42,12 @@
       "file": "scene-night.jpg",
       "source": "Original generated artwork for local personal use",
       "publicRelease": false
-    }
+    },
+    {
+      "file": "portal-leaf.png",
+      "source": "Original generated leaf-reaching pose based on chibi.png for local personal use",
+      "publicRelease": false
+    },
+    {"file": "chibi-daytime.png", "source": "Original generated artwork for local personal use", "publicRelease": false}
   ]
 }

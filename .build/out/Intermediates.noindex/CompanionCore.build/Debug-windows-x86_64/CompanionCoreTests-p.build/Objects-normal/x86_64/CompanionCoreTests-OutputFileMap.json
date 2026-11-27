@@ -1,0 +1,81 @@
+{
+  "" : {
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionCoreTests-primary.dia",
+    "emit-module-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionCoreTests-primary-emit-module.d",
+    "emit-module-diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionCoreTests-primary-emit-module.dia",
+    "pch" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionCoreTests-primary-Bridging-header.pch",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionCoreTests-primary.swiftdeps"
+  },
+  "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\DerivedSources\\test_anchor.swift" : {
+    "const-values" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\test_anchor.swiftconstvalues",
+    "dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\test_anchor.d",
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\test_anchor.dia",
+    "llvm-bc" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\test_anchor.bc",
+    "object" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\test_anchor.o",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\test_anchor.swiftdeps",
+    "swiftmodule" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\test_anchor~partial.swiftmodule"
+  },
+  "D:\\development\\package_ios\\Tests\\CalendarSnapshotTests.swift" : {
+    "const-values" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CalendarSnapshotTests.swiftconstvalues",
+    "dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CalendarSnapshotTests.d",
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CalendarSnapshotTests.dia",
+    "llvm-bc" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CalendarSnapshotTests.bc",
+    "object" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CalendarSnapshotTests.o",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CalendarSnapshotTests.swiftdeps",
+    "swiftmodule" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CalendarSnapshotTests~partial.swiftmodule"
+  },
+  "D:\\development\\package_ios\\Tests\\CharacterPackTests.swift" : {
+    "const-values" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CharacterPackTests.swiftconstvalues",
+    "dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CharacterPackTests.d",
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CharacterPackTests.dia",
+    "llvm-bc" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CharacterPackTests.bc",
+    "object" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CharacterPackTests.o",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CharacterPackTests.swiftdeps",
+    "swiftmodule" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CharacterPackTests~partial.swiftmodule"
+  },
+  "D:\\development\\package_ios\\Tests\\CompanionNoticeTests.swift" : {
+    "const-values" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionNoticeTests.swiftconstvalues",
+    "dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionNoticeTests.d",
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionNoticeTests.dia",
+    "llvm-bc" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionNoticeTests.bc",
+    "object" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionNoticeTests.o",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionNoticeTests.swiftdeps",
+    "swiftmodule" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionNoticeTests~partial.swiftmodule"
+  },
+  "D:\\development\\package_ios\\Tests\\CompanionTests.swift" : {
+    "const-values" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionTests.swiftconstvalues",
+    "dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionTests.d",
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionTests.dia",
+    "llvm-bc" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionTests.bc",
+    "object" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionTests.o",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionTests.swiftdeps",
+    "swiftmodule" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\CompanionTests~partial.swiftmodule"
+  },
+  "D:\\development\\package_ios\\Tests\\DayTimelineTests.swift" : {
+    "const-values" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\DayTimelineTests.swiftconstvalues",
+    "dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\DayTimelineTests.d",
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\DayTimelineTests.dia",
+    "llvm-bc" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\DayTimelineTests.bc",
+    "object" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\DayTimelineTests.o",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\DayTimelineTests.swiftdeps",
+    "swiftmodule" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\DayTimelineTests~partial.swiftmodule"
+  },
+  "D:\\development\\package_ios\\Tests\\LocalReminderTests.swift" : {
+    "const-values" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\LocalReminderTests.swiftconstvalues",
+    "dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\LocalReminderTests.d",
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\LocalReminderTests.dia",
+    "llvm-bc" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\LocalReminderTests.bc",
+    "object" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\LocalReminderTests.o",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\LocalReminderTests.swiftdeps",
+    "swiftmodule" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\LocalReminderTests~partial.swiftmodule"
+  },
+  "D:\\development\\package_ios\\Tests\\StoreTests.swift" : {
+    "const-values" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\StoreTests.swiftconstvalues",
+    "dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\StoreTests.d",
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\StoreTests.dia",
+    "llvm-bc" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\StoreTests.bc",
+    "object" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\StoreTests.o",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\StoreTests.swiftdeps",
+    "swiftmodule" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-p.build\\Objects-normal\\x86_64\\StoreTests~partial.swiftmodule"
+  }
+}

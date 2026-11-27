@@ -1,3 +1,4 @@
+#if canImport(SQLite3) || os(iOS) || os(macOS)
 import Foundation
 import SQLite3
 
@@ -11,10 +12,13 @@ struct Store {
     private static let databaseName = "companion.sqlite"
     #endif
 
+    #if os(iOS) || os(macOS)
     static func shared() throws -> Store {
         guard let directory = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.local.mycompanion") else { throw StoreError.unavailable }
         return Store(url: directory.appendingPathComponent(databaseName))
     }
+
+    #endif
 
     private func withDB<T>(writing: Bool, _ body: (OpaquePointer) throws -> T) throws -> T {
         var connection: OpaquePointer?
@@ -72,3 +76,4 @@ struct Store {
         }
     }
 }
+#endif

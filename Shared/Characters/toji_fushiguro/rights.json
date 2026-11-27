@@ -42,6 +42,27 @@
       "file": "scene-night.jpg",
       "source": "Original generated artwork for local personal use",
       "publicRelease": false
-    }
+    },
+    {
+      "file": "spirit-blade.png",
+      "source": "Generated from chibi.png for the inventory spirit reaction, local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "spirit-reach.png",
+      "source": "Generated from chibi.png for the inventory spirit reaction, local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "spirit-idle.png",
+      "source": "Generated from chibi.png for the inventory spirit reaction, local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "spirit-draw.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {"file": "chibi-daytime.png", "source": "Original generated artwork for local personal use", "publicRelease": false}
   ]
 }

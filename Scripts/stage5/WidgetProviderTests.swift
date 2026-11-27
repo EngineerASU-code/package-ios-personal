@@ -87,6 +87,22 @@ final class WidgetProviderTests: XCTestCase {
         add(attachment)
     }
 
+    func testJinwooChangesMoodAndSpeechBetweenTimelineEntriesWithoutATap() throws {
+        var state = Companion()
+        state.hero = .jinwoo
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 27, hour: 11)))
+        let frames = DayTimeline.dates(from: start, mode: state.mode, calendar: calendar).map {
+            DayTimeline.display(state, at: $0, calendar: calendar)
+        }
+        let spoken = frames.filter { !$0.text.isEmpty }
+        XCTAssertTrue(spoken.allSatisfy { state.hero.pack?.byID[$0.id] != nil })
+        XCTAssertGreaterThan(Set(spoken.map(\.text)).count, 1)
+        XCTAssertGreaterThan(Set(frames.map { $0.emotion.rawValue }).count, 1)
+        XCTAssertNil(state.contact)
+    }
+
     func testConfigurationsShareModeAndKeepIndependentContacts() async throws {
         let store = try Store.shared()
         defer { try? FileManager.default.removeItem(at: store.url) }
@@ -94,11 +110,20 @@ final class WidgetProviderTests: XCTestCase {
 
         let provider = Provider()
         let primary = Settings()
+        let missingURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        XCTAssertFalse(provider.current(primary, store: { Store(url: missingURL) }).available)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missingURL.path))
         var fixed = Settings()
         fixed.selection = .maomao
         fixed.showsSpeech = false
         fixed.showsCount = true
 
+        let noPack = provider.current(fixed, hasResources: { hero in
+            XCTAssertEqual(hero, .maomao)
+            return false
+        })
+        XCTAssertFalse(noPack.available)
+        XCTAssertNil(noPack.display)
         let initial = provider.current(fixed)
         XCTAssertTrue(initial.available)
         XCTAssertEqual(initial.state.hero, .maomao)

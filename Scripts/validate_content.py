@@ -23,21 +23,29 @@ for hero, name in roster.items():
     for key, file in manifest.items():
         if key.endswith("File"):
             load(file)
-    assert not load("rights.json")["publicRelease"]
+    rights = load("rights.json")
+    assert rights["publicRelease"] is False
+    art = rights["art"]
+    images = {path.name for path in folder.iterdir() if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}}
+    assert {item["file"] for item in art} == images and len(art) == len(images), hero
+    assert all(item["source"].strip() and item["publicRelease"] is False for item in art), hero
     assert re.fullmatch("#[0-9A-F]{6}", load("theme.json")["accent"])
     rows = load("dialogue.ru.json")
     by_id = {r["id"]: r for r in rows}
     assert len(by_id) == len(rows) == 150
     assert Counter(r["category"] for r in rows) == counts
     assert [r["id"] for r in rows[:5]] == ["intro","pause","notice","aside","spark"]
-    actions = {a["label"] for a in load("behaviors.json")}
+    actions = {a["id"]: a["label"] for a in load("behaviors.json")}
     for row in rows:
         normalized = " ".join(unicodedata.normalize("NFC",row["text"]).casefold().split())
         assert normalized not in texts and re.search("[а-яё]", normalized), (hero, normalized)
         assert len(row["text"]) <= 90 and not any(c in normalized for c in "{}")
-        assert row["action"] in actions and row["origin"] == "original" and row["triggers"]
+        assert actions.get(row["behaviorID"]) == row["action"] and row["origin"] == "original" and row["triggers"]
         assert {"app","widget"} <= set(row["channels"]) <= {"app","widget","notification"}
         assert row["weight"] > 0 and row["behaviorID"] in {"intro","pause","notice","aside","spark"}
+        if "notification" in row["channels"]:
+            short = row["shortText"]
+            assert short.strip() and len(short) <= 60 and not any(c in short for c in "{}"), row["id"]
         texts.add(normalized)
     eggs = load("easter_eggs.json")
     assert len(eggs) == len({egg["title"] for egg in eggs}) == 5

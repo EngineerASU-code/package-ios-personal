@@ -1,0 +1,18 @@
+{
+  "" : {
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\CompanionCoreTests-test-runner-primary.dia",
+    "emit-module-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\CompanionCoreTests-test-runner-primary-emit-module.d",
+    "emit-module-diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\CompanionCoreTests-test-runner-primary-emit-module.dia",
+    "pch" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\CompanionCoreTests-test-runner-primary-Bridging-header.pch",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\CompanionCoreTests-test-runner-primary.swiftdeps"
+  },
+  "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\DerivedSources\\test_entry_point.swift" : {
+    "const-values" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\test_entry_point.swiftconstvalues",
+    "dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\test_entry_point.d",
+    "diagnostics" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\test_entry_point.dia",
+    "llvm-bc" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\test_entry_point.bc",
+    "object" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\test_entry_point.o",
+    "swift-dependencies" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\test_entry_point.swiftdeps",
+    "swiftmodule" : "D:\\development\\package_ios\\.build\\out\\Intermediates.noindex\\CompanionCore.build\\Debug-windows-x86_64\\CompanionCoreTests-test-runner.build\\Objects-normal\\x86_64\\test_entry_point~partial.swiftmodule"
+  }
+}

@@ -38,6 +38,38 @@ final class CalendarIntegrationTests: XCTestCase {
         await service.refresh()
         XCTAssertEqual(try Store.shared().read().calendarSnapshot.events.first { $0.id == item.id }?.title, event.title)
 
+        let movedStart = event.startDate.addingTimeInterval(2 * 3600)
+        event.startDate = movedStart
+        event.endDate = movedStart.addingTimeInterval(1200)
+        try store.save(event, span: .thisEvent)
+        await service.refresh()
+        let movedSnapshot = try Store.shared().read().calendarSnapshot
+        XCTAssertFalse(movedSnapshot.events.contains { $0.id == item.id })
+        let moved = try XCTUnwrap(movedSnapshot.events.first { $0.title == event.title })
+        XCTAssertEqual(moved.start.timeIntervalSince(movedStart), 0, accuracy: 1)
+
+        let allDay = EKEvent(eventStore: store)
+        allDay.calendar = event.calendar
+        allDay.title = "All-day simulator fixture"
+        let today = Calendar.current.startOfDay(for: Date())
+        allDay.startDate = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 1, to: today))
+        allDay.endDate = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 2, to: today))
+        allDay.isAllDay = true
+        try store.save(allDay, span: .thisEvent)
+        var removed = false
+        defer { if !removed { try? store.remove(allDay, span: .thisEvent) } }
+        await service.refresh()
+        let full = try Store.shared().read().calendarSnapshot
+        let day = try XCTUnwrap(full.events.first { $0.title == allDay.title })
+        XCTAssertTrue(day.allDay)
+        XCTAssertEqual(day.timeLabel, "Весь день")
+        try store.remove(allDay, span: .thisEvent)
+        removed = true
+        await service.refresh()
+        let afterDelete = try Store.shared().read().calendarSnapshot
+        XCTAssertFalse(afterDelete.events.contains { $0.id == day.id })
+        XCTAssertTrue(afterDelete.events.contains { $0.id == moved.id })
+
         settings.set(false, forKey: "calendarEnabled")
         settings.set(false, forKey: "calendarTitles")
         await service.refresh()

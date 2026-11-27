@@ -45,7 +45,7 @@ struct React: AppIntent {
             let primary = state.hero
             guard !follows || primary == target else { return }
             state.hero = target
-            state.react()
+            state.react(source: .widgetIntent)
             state.hero = primary
         }
         return .result()
@@ -65,10 +65,16 @@ struct Provider: AppIntentTimelineProvider {
         Entry(date: Date(), state: Companion(), settings: Settings())
     }
 
-    func current(_ configuration: Settings) -> Entry {
+    func current(_ configuration: Settings, store: () throws -> Store = Store.shared,
+                 hasResources: (Hero) -> Bool = { hero in
+                     hero.pack != nil && UIImage(named: "Characters/" + hero.rawValue + "/chibi.png") != nil
+                 }) -> Entry {
         do {
-            var state = try Store.shared().read()
+            let store = try store()
+            guard FileManager.default.fileExists(atPath: store.url.path) else { throw StoreError.unavailable }
+            var state = try store.read()
             if let fixed = Hero(rawValue: configuration.selection.rawValue) { state.hero = fixed }
+            guard hasResources(state.hero) else { throw StoreError.unavailable }
             let process = ProcessInfo.processInfo
             if state.mode != .paused && process.thermalState == .critical { state.mode = .safe }
             if state.mode == .normal && (process.isLowPowerModeEnabled || process.thermalState == .serious) { state.mode = .eco }
@@ -77,7 +83,7 @@ struct Provider: AppIntentTimelineProvider {
             state.calendarSnapshot = state.calendarSnapshot.filtered(by: calendarPrivacy)
             let now = Date()
             return Entry(date: now, state: state, settings: configuration,
-                         display: DayTimeline.display(state, at: now, calendar: .current, showsTask: configuration.showsTask))
+                         display: DayTimeline.display(state, at: now, calendar: .current, showsTask: configuration.showsTask, channel: "widget"))
         } catch {
             return Entry(date: Date(), state: Companion(), settings: configuration, available: false)
         }
@@ -98,7 +104,7 @@ struct Provider: AppIntentTimelineProvider {
             return Timeline(entries: [first], policy: .never)
         }
         let calendar = Calendar.current
-        var scheduled = Set(DayTimeline.dates(from: first.date, mode: first.state.mode, calendar: calendar))
+        var scheduled = Set(DayTimeline.dates(from: first.date, state: first.state, calendar: calendar))
         let snapshot = first.state.calendarSnapshot
         if let expiry = snapshot.expiry, snapshot.isFresh(at: first.date) {
             scheduled.insert(expiry)
@@ -112,7 +118,7 @@ struct Provider: AppIntentTimelineProvider {
         let dates = scheduled.sorted()
         let entries = dates.map { date in
             Entry(date: date, state: first.state, settings: configuration,
-                  display: DayTimeline.display(first.state, at: date, calendar: calendar, showsTask: configuration.showsTask))
+                  display: DayTimeline.display(first.state, at: date, calendar: calendar, showsTask: configuration.showsTask, channel: "widget"))
         }
         return Timeline(entries: entries, policy: .after(first.date.addingTimeInterval(12 * 3600)))
     }
@@ -131,15 +137,62 @@ struct WidgetScene: View {
 
     private var showsPortal: Bool {
         animates && (family == .systemMedium || family == .systemLarge)
-            && (entry.state.hero == .jinwoo || entry.state.hero == .maomao)
+            && entry.state.hero == .maomao
             && entry.state.hero.pack != nil
     }
 
     private var portalOnRight: Bool { entry.state.contact?.portalOnRight ?? false }
 
+    @ViewBuilder private var homeFigure: some View {
+        let model = CompanionFigure(hero: entry.state.hero, emotion: line.emotion, daytimePose: line.daytimePose)
+        if entry.state.hero == .jinwoo && entry.state.mode == .normal && (family == .systemMedium || family == .systemLarge) {
+            ShadowSummon(figure: model, contact: entry.state.contact.flatMap { $0.response == line.id ? $0.date : nil }, animate: animates)
+        } else if entry.state.hero == .maomao {
+            model.aspectRatio(1, contentMode: .fit)
+                .scaleEffect(family == .systemSmall ? 1.42 : 1, anchor: .top)
+                .clipped()
+        } else if entry.state.hero == .toji && (family == .systemMedium || family == .systemLarge) {
+            ZStack {
+                if let contact = entry.state.contact, contact.response == line.id {
+                    TojiSpirit(progress: 1)
+                        .id(contact.date)
+                        .transition(.asymmetric(insertion: .modifier(
+                            active: TojiSpiritPhase(progress: 0), identity: TojiSpiritPhase(progress: 1)),
+                            removal: .identity))
+                } else if line.emotion == .neutral {
+                    TojiSpirit(progress: 0)
+                } else {
+                    model
+                }
+            }
+            .scaleEffect(family == .systemMedium ? 1.14 : 1)
+            .animation(animates ? .linear(duration: 1.38) : nil, value: entry.state.contact?.date)
+        } else if entry.state.hero == .sukuna && (family == .systemMedium || family == .systemLarge) {
+            ZStack {
+                if let contact = entry.state.contact, contact.response == line.id {
+                    Color.clear.modifier(SukunaExpression(progress: 1))
+                        .aspectRatio(1, contentMode: .fit)
+                        .id(contact.date)
+                        .transition(.asymmetric(insertion: .modifier(
+                            active: SukunaExpression(progress: 0), identity: SukunaExpression(progress: 1)),
+                            removal: .identity))
+                } else if line.emotion == .neutral {
+                    Color.clear.modifier(SukunaExpression(progress: 0))
+                } else {
+                    model
+                }
+            }
+            .scaleEffect(family == .systemMedium ? 1.12 : 1)
+            .animation(animates ? .linear(duration: 0.9) : nil, value: entry.state.contact?.date)
+        } else {
+            model
+        }
+    }
+
     private var figure: some View {
-        CompanionFigure(hero: entry.state.hero, emotion: line.emotion)
-            .frame(maxWidth: family == .systemSmall ? 110 : (family == .systemLarge ? 172 : 124),
+        let summon = entry.state.hero == .jinwoo && entry.state.mode == .normal
+        return homeFigure
+            .frame(maxWidth: family == .systemSmall ? 110 : (summon ? 190 : (family == .systemLarge ? 172 : 124)),
                    maxHeight: family == .systemSmall ? 90 : (family == .systemLarge ? 190 : 126))
             .shadow(color: .black.opacity(0.42), radius: 3, y: 2)
             .transition(.opacity)
@@ -157,14 +210,14 @@ struct WidgetScene: View {
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
-                CompanionFigure(hero: entry.state.hero, emotion: line.emotion)
+                CompanionFigure(hero: entry.state.hero, emotion: line.emotion, daytimePose: line.daytimePose)
                     .contrast(1.18).padding(1)
             }.accessibilityLabel(entry.state.hero.name)
         case .accessoryInline:
             Label(entry.state.hero.name, systemImage: symbol)
         case .accessoryRectangular:
             HStack(spacing: 4) {
-                CompanionFigure(hero: entry.state.hero, emotion: line.emotion)
+                CompanionFigure(hero: entry.state.hero, emotion: line.emotion, daytimePose: line.daytimePose)
                     .frame(width: 40, height: 46)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.state.hero.name).font(.headline).lineLimit(1)
@@ -176,10 +229,10 @@ struct WidgetScene: View {
         }
     }
 
-    private var smallJinwoo: some View {
+    private var smallFeaturedHero: some View {
         GeometryReader { bounds in
             ZStack(alignment: .bottomLeading) {
-                CompanionFigure(hero: .jinwoo, emotion: line.emotion)
+                homeFigure
                     .shadow(color: .white.opacity(0.60), radius: 2)
                     .frame(width: bounds.size.width, height: bounds.size.height, alignment: .top)
                 VStack(alignment: .leading, spacing: 3) {
@@ -200,28 +253,52 @@ struct WidgetScene: View {
         switch family {
         case .accessoryCircular, .accessoryInline, .accessoryRectangular:
             accessory(family)
-        case .systemSmall where entry.state.hero == .jinwoo:
-            smallJinwoo
+        case .systemSmall:
+            smallFeaturedHero
         default:
-            VStack(alignment: .leading, spacing: family == .systemSmall ? 4 : 10) {
-                if family == .systemSmall {
-                    figure.frame(maxWidth: .infinity, minHeight: 48)
-                    Text(entry.state.hero.name).font(.caption.bold())
-                    if !speech.isEmpty {
-                        Text(entry.state.hero.pack?.byID[line.id]?.shortText ?? speech)
-                            .font(.caption).foregroundStyle(.black).lineLimit(3)
-                            .padding(4).background(.white, in: RoundedRectangle(cornerRadius: 6))
-                    }
-                } else {
-                HStack(spacing: 8) {
-                    if !(showsPortal && portalOnRight) { figure }
-                    VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 10) {
+                let caption = VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(entry.state.hero.name).font(.headline)
-                        if family != .systemSmall || speech.isEmpty { Text(line.action).font(.caption) }
-                        if !speech.isEmpty && family != .systemSmall { bubble }
-                    }
-                    if showsPortal && portalOnRight { figure }
+                        Text(line.action).font(.caption)
+                    }.widgetCaptionBackground()
+                    if !speech.isEmpty { bubble }
                 }
+                if showsPortal {
+                    CompanionPortalScene(hero: entry.state.hero, right: portalOnRight, figure: figure, caption: caption)
+                } else {
+                    HStack(spacing: 8) {
+                        if entry.state.hero == .gojo,
+                           let contact = entry.state.contact, contact.response == line.id,
+                           line.emotion != .sleepy {
+                            GojoGaze(progress: 1)
+                                .id(contact.date)
+                                .transition(.asymmetric(insertion: .modifier(
+                                    active: GojoGazePhase(progress: 0),
+                                    identity: GojoGazePhase(progress: 1)), removal: .identity))
+                                .frame(maxWidth: family == .systemLarge ? 172 : 124,
+                                       maxHeight: family == .systemLarge ? 190 : 126)
+                                .animation(animates ? .linear(duration: 1.4) : nil, value: contact.date)
+                        } else if entry.state.hero == .jinshi {
+                            figure.overlay {
+                                ZStack {
+                                    if let contact = entry.state.contact, contact.response == line.id {
+                                        JinshiFan(opening: 1)
+                                            .id(contact.date)
+                                            .transition(.asymmetric(insertion: .modifier(
+                                                active: FoldedFan(progress: 0), identity: FoldedFan(progress: 1)),
+                                                removal: .identity))
+                                    }
+                                }
+                                .animation(animates ? .easeInOut(duration: 0.95) : nil, value: entry.state.contact?.date)
+                                .accessibilityHidden(true)
+                            }
+                        } else {
+                            figure
+                        }
+                        caption
+                    }.animation(entry.state.hero == .gojo && animates ? .linear(duration: 1.4) : nil,
+                                value: entry.state.hero == .gojo ? entry.state.contact?.date : nil)
                 }
                 if family == .systemMedium || family == .systemLarge {
                     ForEach(entry.state.calendarSnapshot.upcoming(at: entry.date).prefix(family == .systemLarge ? 3 : 1)) { event in
@@ -230,17 +307,17 @@ struct WidgetScene: View {
                             Text(event.start, format: .dateTime.day().month())
                             Text(event.timeLabel)
                             Text(event.label).privacySensitive()
-                        }.font(.caption2).lineLimit(1)
+                        }.font(.caption2).lineLimit(1).widgetCaptionBackground()
                     }
                 }
                 if (family == .systemMedium || family == .systemLarge), entry.settings.showsTask,
                    let due = entry.state.reminders.filter({ $0.completedAt == nil }).compactMap(\.target).min() {
                     Label("Задача · \(due.formatted(date: .abbreviated, time: .shortened))", systemImage: "checklist")
-                        .font(.caption2).lineLimit(1).privacySensitive()
+                        .font(.caption2).lineLimit(1).widgetCaptionBackground().privacySensitive()
                 }
                 if family == .systemLarge && entry.settings.showsCount {
                     let count = entry.state.unlocks.filter { $0.id.hasPrefix(entry.state.hero.rawValue + "_") }.count
-                    Text("Находки · \(count)").font(.subheadline)
+                    Text("Находки · \(count)").font(.subheadline).widgetCaptionBackground()
                 }
             }.foregroundStyle(.white).shadow(color: .black.opacity(0.35), radius: 1).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
@@ -287,6 +364,147 @@ struct WidgetScene: View {
                 HeroBackdrop(hero: entry.state.hero, date: entry.date, mode: entry.state.mode)
             } else { Color.clear }
         }
+    }
+}
+
+private struct FoldedFan: AnimatableModifier {
+    var progress: Double
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        JinshiFan(opening: progress)
+    }
+}
+
+private struct JinshiFan: View {
+    let opening: Double
+
+    var body: some View {
+        Canvas { context, size in
+            let side = min(size.width, size.height)
+            let pivot = CGPoint(x: size.width / 2 + side * 0.10, y: size.height / 2 + side * 0.17)
+            context.translateBy(x: pivot.x, y: pivot.y)
+            context.rotate(by: .degrees(-18 + 10 * opening))
+            let radius = side * 0.31
+            let halfAngle = 4 + 59 * opening
+            let gold = Color(red: 0.96, green: 0.79, blue: 0.51)
+            for leaf in 0..<10 {
+                let a = (-90 - halfAngle + Double(leaf) * halfAngle / 5) * .pi / 180
+                let b = a + halfAngle * .pi / 900
+                let outer = CGPoint(x: radius * cos(a), y: radius * sin(a))
+                let next = CGPoint(x: radius * cos(b), y: radius * sin(b))
+                var panel = Path()
+                panel.move(to: .zero)
+                panel.addLine(to: outer)
+                panel.addLine(to: next)
+                panel.closeSubpath()
+                context.fill(panel, with: .color(leaf.isMultiple(of: 2)
+                    ? Color(red: 0.52, green: 0.28, blue: 0.46)
+                    : Color(red: 0.71, green: 0.46, blue: 0.60)))
+                context.stroke(panel, with: .color(gold), lineWidth: side * 0.005)
+            }
+            context.fill(Path(ellipseIn: CGRect(x: -2, y: -2, width: 4, height: 4)), with: .color(gold))
+        }
+    }
+}
+
+private struct SukunaExpression: AnimatableModifier {
+    var progress: Double
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let chin = blend(from: 0.04, to: 0.43)
+        let smile = blend(from: 0.58, to: 1)
+        return ZStack {
+            pose("tap-calm").opacity(1 - chin)
+            pose("tap-chin").opacity(chin * (1 - smile))
+            pose("tap-smirk").opacity(smile)
+        }.accessibilityHidden(true)
+    }
+
+    private func blend(from start: Double, to end: Double) -> Double {
+        let t = min(1, max(0, (progress - start) / (end - start)))
+        return t * t * (3 - 2 * t)
+    }
+
+    private func pose(_ name: String) -> some View {
+        Image("Characters/ryomen_sukuna/" + name + ".png").resizable().scaledToFit()
+    }
+}
+
+private struct TojiSpiritPhase: AnimatableModifier {
+    var progress: Double
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+    func body(content: Content) -> some View { TojiSpirit(progress: progress) }
+}
+
+private struct TojiSpirit: View {
+    let progress: Double
+
+    private func blend(from start: Double, to end: Double) -> Double {
+        let t = min(1, max(0, (progress * 980 - start) / (end - start)))
+        return t * t * (3 - 2 * t)
+    }
+
+    var body: some View {
+        let reach = blend(from: 80, to: 310)
+        let lower = blend(from: 700, to: 980)
+        ZStack {
+            pose("spirit-idle").opacity(1 - reach)
+            pose("spirit-draw").opacity(reach * (1 - lower))
+            pose("spirit-blade").opacity(lower)
+        }.accessibilityHidden(true)
+    }
+
+    private func pose(_ name: String) -> some View {
+        Image("Characters/toji_fushiguro/" + name + ".png").resizable().scaledToFit()
+    }
+}
+
+private struct GojoGazePhase: AnimatableModifier {
+    var progress: Double
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+    func body(content: Content) -> some View { GojoGaze(progress: progress) }
+}
+
+private struct GojoGaze: View {
+    let progress: Double
+
+    private func layer(_ name: String, from start: Double, to end: Double) -> some View {
+        let amount = min(1, max(0, (progress - start) / (end - start)))
+        return Image("Characters/satoru_gojo/" + name + ".png")
+            .resizable().scaledToFit().opacity(amount * amount * (3 - 2 * amount))
+    }
+
+    var body: some View {
+        ZStack {
+            // Complementary alpha on the moving arm avoids leaving the original hand beneath it.
+            layer("chibi", from: -1, to: 0).opacity(1 - min(1, max(0, progress / 0.22)))
+            layer("blindfold-touch", from: 0, to: 0.22).opacity(1 - min(1, max(0, (progress - 0.22) / 0.24)))
+            layer("blindfold-gaze", from: 0.22, to: 0.46)
+            layer("blindfold-smirk", from: 0.78, to: 1)
+        }.accessibilityHidden(true)
+    }
+}
+
+private extension View {
+    func widgetCaptionBackground() -> some View {
+        foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color(red: 0.12, green: 0.13, blue: 0.16), in: RoundedRectangle(cornerRadius: 6))
     }
 }
 

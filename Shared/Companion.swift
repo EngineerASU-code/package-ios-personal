@@ -7,6 +7,7 @@ enum CompanionMode: String, Codable, CaseIterable {
 enum ChibiEmotion: String { case neutral, happy, sleepy, surprised }
 
 struct Reaction {
+    var daytimePose = false
     let emotion: ChibiEmotion
     let id: String
     let text: String
@@ -56,12 +57,75 @@ struct Unlock: Codable, Equatable {
 
 final class CharacterPack {
     struct Theme: Decodable { let accent, symbol: String }
+    struct Disposition: Decodable {
+        let defaultMood, recovery: String
+
+        func expression(for mood: String) -> ChibiEmotion {
+            switch mood {
+            case "playful", "happy": return .happy
+            case "curious", "surprised": return .surprised
+            case "sleepy", "resting": return .sleepy
+            default: return .neutral
+            }
+        }
+    }
+    struct Behavior: Decodable {
+        let id, label, from, to: String
+        let triggers, channels, requires: [String]?
+        let priority, weight, cooldownSeconds: Int?
+
+        func permits(state: String, trigger: String, channel: String, facts: Set<String>,
+                     date: Date, lastUsed: Date?) -> Bool {
+            from == state && ["talking", "resting", "sleeping", "greeting", "working", "training",
+                              "exploring", "celebrating", "annoyed", "specialAction", "idle"].contains(to)
+                && (triggers?.contains(trigger) ?? true) && (channels?.contains(channel) ?? true)
+                && facts.isSuperset(of: requires ?? []) && (weight ?? 1) > 0
+                && (lastUsed.map { date.timeIntervalSince($0) >= Double(max(0, cooldownSeconds ?? 0)) } ?? true)
+        }
+    }
+    struct Personality: Decodable { let intensity: String }
+    let personality: Personality
+    let disposition: Disposition
+    let behaviors: [String: Behavior]
     let theme: Theme
     struct Record: Decodable {
         let id, text, category, action: String
         let triggers, channels, requires: [String]
         let weight: Int
         let shortText: String?
+        var periods: [DayPeriod]? = nil
+        func allows(_ period: DayPeriod) -> Bool {
+            if let periods { return periods.contains(period) }
+            switch category {
+            case "morning": return period == .morning || period == .dawn
+            case "night": return period == .night || period == .lateNight
+            default: return true
+            }
+        }
+        var behaviorID: String? = nil
+        var intensity: String? = nil
+        var emotions: [String]? = nil
+        var variables: [String]? = nil
+        var cooldownSeconds: Int? = nil
+
+        func eligible(trigger: String, channel: String, facts: Set<String>, mood: String?,
+                      intensity level: String, period: DayPeriod?, substitutions: [String: String] = [:]) -> Bool {
+            weight > 0 && triggers.contains(trigger) && channels.contains(channel)
+                && facts.isSuperset(of: requires) && (variables ?? []).allSatisfy { substitutions[$0] != nil }
+                && rendered(text, using: substitutions) != nil && (shortText.map { rendered($0, using: substitutions) != nil } ?? true)
+                && (emotions.map { allowed in allowed.isEmpty || (mood.map(allowed.contains) ?? false) } ?? true)
+                && (intensity == nil || intensity == level) && (period.map(allows) ?? true)
+        }
+        func rendered(_ template: String, using substitutions: [String: String]) -> String? {
+            guard template.contains("{") || template.contains("}") else { return template }
+            var result = template
+            for name in variables ?? [] {
+                guard let value = substitutions[name] else { return nil }
+                result = result.replacingOccurrences(of: "{\(name)}", with: value)
+            }
+            return result.contains("{") || result.contains("}") ? nil : result
+        }
+
         var reaction: Reaction {
             let emotion: ChibiEmotion
             switch category {
@@ -75,10 +139,10 @@ final class CharacterPack {
     }
 
     // A stable slot value keeps the chosen text unchanged during reconciliation.
-    static func notificationLine(in rows: [Record], trigger: String, facts: Set<String>, slot: UInt64) -> Record? {
+    static func notificationLine(in rows: [Record], trigger: String, facts: Set<String>, slot: UInt64,
+                                 mood: String? = nil, intensity: String = "gentle", period: DayPeriod? = nil) -> Record? {
         let candidates = rows.filter {
-            $0.weight > 0 && $0.channels.contains("notification") &&
-                $0.triggers.contains(trigger) && facts.isSuperset(of: $0.requires)
+            $0.eligible(trigger: trigger, channel: "notification", facts: facts, mood: mood, intensity: intensity, period: period)
         }
         let total = candidates.reduce(UInt64(0)) { $0 + UInt64($1.weight) }
         guard total > 0 else { return nil }
@@ -108,7 +172,17 @@ final class CharacterPack {
         guard let manifest: Manifest = decode("manifest.json"), manifest.schemaVersion == 1, manifest.id == hero.rawValue,
               let palette: Theme = decode("theme.json"), let rows: [Record] = decode("dialogue.ru.json"), let eggs: [Find] = decode("easter_eggs.json"),
               Set(rows.map(\.id)).count == rows.count, rows.first?.id == "intro" else { return nil }
-        let taps = rows.filter { ["tap", "compliment", "support"].contains($0.category) }.map(\.reaction)
+        guard let profile: Personality = decode("personality.json"), let moods: Disposition = decode("emotions.json"),
+              let actions: [Behavior] = decode("behaviors.json"),
+              Set(actions.map(\.id)).count == actions.count else { return nil }
+        personality = profile
+        disposition = moods
+        behaviors = Dictionary(uniqueKeysWithValues: actions.map { ($0.id, $0) })
+        let taps = rows.filter {
+            ["tap", "compliment", "support"].contains($0.category) && $0.weight > 0 &&
+                $0.requires.isEmpty && ["widgetInteraction", "appInteraction"].allSatisfy($0.triggers.contains) &&
+                ["widget", "app"].allSatisfy($0.channels.contains)
+        }.map(\.reaction)
         guard !taps.isEmpty else { return nil }
         theme = palette
         records = rows
@@ -202,12 +276,80 @@ struct LocalReminder: Codable, Equatable, Identifiable {
     }
 }
 
+struct CompanionEvent {
+    enum Source: String, Codable { case app, widgetIntent, localSchedule, calendarSnapshot, simulatedTest }
+    enum Kind: String, Codable, CaseIterable {
+        case firstLaunch, appOpened, foregrounded, characterSelected, appInteraction, widgetInteraction
+        case repeatInteraction, morningInteraction, scheduledGreeting, daytimeChanged, lateInteraction
+        case bedtimeReminder, inactivityElapsed, calendarUpcoming, calendarChanged, reminderDue
+        case reminderCreated, reminderCompleted, reminderSnoozed, randomSlot, easterEgg, safeModeChanged, pauseChanged
+
+        var priority: Int {
+            switch self {
+            case .pauseChanged: return 100
+            case .safeModeChanged: return 99
+            case .characterSelected, .appInteraction, .widgetInteraction, .repeatInteraction,
+                 .reminderCreated, .reminderCompleted, .reminderSnoozed: return 90
+            case .reminderDue: return 85
+            case .calendarUpcoming, .calendarChanged: return 80
+            case .lateInteraction, .bedtimeReminder: return 60
+            case .morningInteraction, .scheduledGreeting: return 55
+            case .randomSlot: return 30
+            case .easterEgg: return 20
+            default: return 10
+            }
+        }
+    }
+    let id: UUID
+    let source: Source
+    let kind: Kind
+    let date: Date
+    var facts: Set<String> = []
+    var newMode: CompanionMode? = nil
+}
+
+struct HeroActivity: Codable, Equatable {
+    var mood: String
+    var behavior = "idle"
+    var energy = 70
+    var affinity = 50
+    var irritation = 0
+    var curiosity = 50
+    var updatedAt: Date
+    var behaviorDates: [String: Date] = [:]
+    var lineDates: [String: Date] = [:]
+    var lastSource: CompanionEvent.Source?
+    var lastEvent: UUID?
+    var lastKind: CompanionEvent.Kind?
+    var lastPriority: Int?
+    var lastInteractionAt: Date?
+    var substitutions: [String: String]?
+
+    func recovered(at date: Date, baseline: String) -> Self {
+        let seconds = date.timeIntervalSince(updatedAt)
+        guard seconds >= 2 else { return self }
+        var result = self
+        result.behavior = "idle"
+        if seconds >= 300 { result.mood = baseline }
+        let steps = Int(min(100, seconds / 60))
+        func toward(_ value: Int, _ target: Int) -> Int {
+            value < target ? min(target, value + steps) : max(target, value - steps)
+        }
+        result.energy = toward(energy, 70)
+        result.curiosity = toward(curiosity, 50)
+        result.irritation = toward(irritation, 0)
+        return result
+    }
+}
+
 struct Companion: Codable, Equatable {
     var reminders: [LocalReminder] = []
     var calendarSnapshot = CalendarSnapshot()
     var mode = CompanionMode.normal
     var hero = Hero.gojo
     private var histories: [String: [String]] = [:]
+    private var activities: [String: HeroActivity] = [:]
+    private var events: [UUID: Date] = [:]
     private var contacts: [String: Contact] = [:]
     var contact: Contact? {
         get { contacts[hero.rawValue] }
@@ -220,10 +362,12 @@ struct Companion: Codable, Equatable {
     init() {}
 
     // Old snapshots stored Gojo's first three phrases by position.
-    private enum CodingKeys: String, CodingKey { case calendarSnapshot, mode, hero, histories, contacts, greetingDays, unlocks, reminders }
+    private enum CodingKeys: String, CodingKey { case calendarSnapshot, mode, hero, histories, contacts, greetingDays, unlocks, reminders, activities, events }
     private enum LegacyKeys: String, CodingKey { case line, contact }
     init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
+        activities = try fields.decodeIfPresent([String: HeroActivity].self, forKey: .activities) ?? [:]
+        events = try fields.decodeIfPresent([UUID: Date].self, forKey: .events) ?? [:]
         calendarSnapshot = try fields.decodeIfPresent(CalendarSnapshot.self, forKey: .calendarSnapshot) ?? CalendarSnapshot()
         mode = try fields.decode(CompanionMode.self, forKey: .mode)
         reminders = try fields.decodeIfPresent([LocalReminder].self, forKey: .reminders) ?? []
@@ -247,7 +391,14 @@ struct Companion: Codable, Equatable {
 
     var reaction: Reaction {
         if let contact, contact.hero == hero {
-            if let row = hero.pack?.byID[contact.response] { return row.reaction }
+            if let pack = hero.pack, let row = pack.byID[contact.response] {
+                let line = row.reaction
+                let action = row.behaviorID.flatMap { pack.behaviors[$0]?.label } ?? line.action
+                let emotion = activities[hero.rawValue].map { pack.disposition.expression(for: $0.mood) } ?? line.emotion
+                let text = row.rendered(row.text, using: activities[hero.rawValue]?.substitutions ?? [:]) ?? "Я здесь."
+                return Reaction(row.id, text, action, emotion: emotion)
+            }
+            if contact.response == "idle" { return Reaction("idle", "Я здесь.", "Отдыхает") }
             switch contact.response {
             case "greeting": return hero.greeting
             case "rest": return Reaction("rest", "Уже поздно. Пора отдыхать.", "Зевает", emotion: .sleepy)
@@ -259,70 +410,197 @@ struct Companion: Codable, Equatable {
         return lines.first { $0.id == histories[hero.rawValue]?.last } ?? lines[0]
     }
 
-    @discardableResult mutating func greetIfNeeded(at date: Date, calendar: Calendar) -> Bool {
-        guard mode == .normal || mode == .eco else { return false }
+    func activity(at date: Date) -> HeroActivity {
+        let baseline = hero.pack?.disposition.defaultMood ?? "neutral"
+        return activities[hero.rawValue]?.recovered(at: date, baseline: baseline)
+            ?? HeroActivity(mood: baseline, updatedAt: date)
+    }
+
+    private func greetingDay(at date: Date, calendar: Calendar) -> Int? {
         let period = DayPeriod(hour: calendar.component(.hour, from: date))
+        guard period == .dawn || period == .morning else { return nil }
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         let day = (parts.year ?? 0) * 10000 + (parts.month ?? 0) * 100 + (parts.day ?? 0)
-        if (period == .dawn || period == .morning), day > (greetingDays[hero.rawValue] ?? 0) {
-            greetingDays[hero.rawValue] = day
-            let greetings = hero.pack?.records.filter { $0.category == "morning" } ?? []
-            let id = greetings.isEmpty ? "greeting" : greetings[day % greetings.count].id
-            contact = Contact(hero: hero, date: date, response: id)
-            return true
-        }
-        return false
+        return day > (greetingDays[hero.rawValue] ?? 0) ? day : nil
     }
 
-    mutating func react(at date: Date = Date(), calendar: Calendar = .current) {
-        guard mode == .normal || mode == .eco else { return }
-        let nextSide = !(contact?.portalOnRight ?? false)
-        defer {
-            if hero == .jinwoo || hero == .maomao { contact?.portalOnRight = nextSide }
-        }
-        if greetIfNeeded(at: date, calendar: calendar) { return }
-        let period = DayPeriod(hour: calendar.component(.hour, from: date))
-        if period == .night || period == .lateNight {
-            let previous = reaction.id
-            let night = hero.pack?.records.filter { $0.category == "night" && $0.id != previous }.randomElement()
-            contact = Contact(hero: hero, date: date, response: night?.id ?? (previous == "rest" ? "quiet" : "rest"))
-            return
-        }
-        if mode == .normal, Int.random(in: 0..<12) == 0, discover(at: date) { return }
+    @discardableResult mutating func greetIfNeeded(at date: Date, calendar: Calendar) -> Bool {
+        guard greetingDay(at: date, calendar: calendar) != nil else { return false }
         var rng = SystemRandomNumberGenerator()
-        react(using: &rng)
-        contact = Contact(hero: hero, date: date, response: reaction.id)
+        let event = CompanionEvent(id: UUID(), source: .app, kind: .appOpened, date: date)
+        return handle([event], at: date, calendar: calendar, using: &rng)
     }
 
-    mutating func discover(at date: Date) -> Bool {
-        guard mode == .normal,
-              unlocks.last.map({ date.timeIntervalSince($0.date) >= 6 * 3600 }) ?? true,
-              let pack = hero.pack,
-              let find = pack.finds.first(where: { find in !unlocks.contains(where: { $0.id == find.id }) }),
-              let row = pack.byID[find.lineID] else { return false }
-        unlocks.append(Unlock(id: find.id, date: date))
-        contact = Contact(hero: hero, date: date, response: row.id)
+    @discardableResult mutating func appContact(_ kind: CompanionEvent.Kind, at date: Date, calendar: Calendar) -> Bool {
+        let last = activities[hero.rawValue]?.lastInteractionAt ?? contact?.date
+        let first = last == nil
+        guard first || kind == .characterSelected || greetingDay(at: date, calendar: calendar) != nil
+                || last.map({ date.timeIntervalSince($0) >= 86400 }) == true else { return false }
+        var rng = SystemRandomNumberGenerator()
+        let event = CompanionEvent(id: UUID(), source: .app, kind: first && kind != .characterSelected ? .firstLaunch : kind, date: date)
+        return handle([event], at: date, calendar: calendar, using: &rng)
+    }
+
+    mutating func react(at date: Date = Date(), calendar: Calendar = .current, source: CompanionEvent.Source = .app) {
+        var rng = SystemRandomNumberGenerator()
+        let event = CompanionEvent(id: UUID(), source: source,
+                                   kind: source == .widgetIntent ? .widgetInteraction : .appInteraction, date: date)
+        _ = handle([event], at: date, calendar: calendar, using: &rng)
+    }
+
+    mutating func setMode(_ next: CompanionMode, at date: Date = Date()) {
+        guard next != mode else { return }
+        var rng = SystemRandomNumberGenerator()
+        let event = CompanionEvent(id: UUID(), source: .app, kind: mode == .paused || next == .paused ? .pauseChanged : .safeModeChanged,
+                                   date: date, newMode: next)
+        _ = handle([event], at: date, calendar: .current, using: &rng)
+    }
+
+    mutating func respond(to kind: CompanionEvent.Kind, at date: Date = Date(), source: CompanionEvent.Source = .app) {
+        var rng = SystemRandomNumberGenerator()
+        let event = CompanionEvent(id: UUID(), source: source, kind: kind, date: date)
+        _ = handle([event], at: date, calendar: .current, using: &rng)
+    }
+
+    @discardableResult mutating func handle<R: RandomNumberGenerator>(_ incoming: [CompanionEvent], at now: Date,
+                               calendar: Calendar, using rng: inout R) -> Bool {
+        let active = mode == .normal || mode == .eco
+        let valid = incoming.filter {
+            let age = now.timeIntervalSince($0.date)
+            let changesMode = ($0.kind == .pauseChanged || $0.kind == .safeModeChanged) && $0.newMode != nil
+            return (active || changesMode) && age >= 0 && age < 300 && events[$0.id] == nil
+        }
+        guard let event = valid.sorted(by: {
+            if $0.kind.priority != $1.kind.priority { return $0.kind.priority > $1.kind.priority }
+            if $0.date != $1.date { return $0.date > $1.date }
+            return $0.id.uuidString < $1.id.uuidString
+        }).first else { return false }
+        events = events.filter { now.timeIntervalSince($0.value) < 300 }
+        for candidate in valid { events[candidate.id] = candidate.date }
+        if let previous = activities[hero.rawValue], let priority = previous.lastPriority, let last = contact,
+           now >= last.date, now.timeIntervalSince(last.date) < 2 && priority > event.kind.priority { return false }
+        if let last = contact, event.date < last.date && event.date < now { return false }
+        if event.kind == .pauseChanged || event.kind == .safeModeChanged {
+            if let next = event.newMode { mode = next }
+            return false
+        }
+        let pack = hero.pack
+        var state = activity(at: event.date)
+        let period = DayPeriod(hour: calendar.component(.hour, from: event.date))
+        let tap = event.kind == .appInteraction || event.kind == .widgetInteraction || event.kind == .repeatInteraction
+        let actualContact = tap || [.firstLaunch, .appOpened, .foregrounded, .characterSelected, .morningInteraction].contains(event.kind)
+        let morning = actualContact ? greetingDay(at: event.date, calendar: calendar) : nil
+        var trigger = event.kind.rawValue
+        if morning != nil { trigger = "morningInteraction" }
+        else if tap && (period == .night || period == .lateNight) { trigger = "lateInteraction" }
+        else if tap, let previous = contact, event.date >= previous.date, event.date.timeIntervalSince(previous.date) < 2 {
+            trigger = "repeatInteraction"
+        } else if actualContact, let previous = state.lastInteractionAt ?? contact?.date, event.date.timeIntervalSince(previous) >= 86400 {
+            trigger = "inactivityElapsed"
+        } else if tap && mode == .normal && Int.random(in: 0..<12, using: &rng) == 0,
+                availableFind(at: event.date) != nil { trigger = "easterEgg" }
+        let channel = event.source == .widgetIntent ? "widget" : "app"
+        var facts = event.facts
+        facts.insert(trigger)
+        let nextSide = !(contact?.portalOnRight ?? false)
+        let substitutions = ["pendingTasks": String(reminders.filter { $0.completedAt == nil }.count),
+                             "completedTasks": String(reminders.filter { $0.completedAt != nil }.count)]
+        // A new explicit contact can interrupt a previously shown one-shot action.
+        if actualContact { state.behavior = "idle" }
+        func candidates(_ trigger: String) -> [CharacterPack.Record] {
+            guard let pack else { return [] }
+            return pack.records.filter { row in
+                guard row.eligible(trigger: trigger, channel: channel, facts: facts, mood: state.mood,
+                                   intensity: pack.personality.intensity, period: period, substitutions: substitutions),
+                      let id = row.behaviorID, let action = pack.behaviors[id],
+                      action.permits(state: state.behavior, trigger: trigger, channel: channel, facts: facts,
+                                     date: event.date, lastUsed: state.behaviorDates[id]) else { return false }
+                if trigger == "easterEgg" { return row.id == availableFind(at: event.date)?.lineID }
+                return true
+            }
+        }
+        var choices = candidates(trigger)
+        let repeated = trigger == "repeatInteraction"
+        if choices.isEmpty && repeated {
+            trigger = channel == "widget" ? "widgetInteraction" : "appInteraction"
+            choices = candidates(trigger)
+        }
+        let recent = histories[hero.rawValue] ?? [reaction.id]
+        if let priority = choices.compactMap({ pack?.behaviors[$0.behaviorID ?? ""]?.priority ?? 0 }).max() {
+            choices = choices.filter { (pack?.behaviors[$0.behaviorID ?? ""]?.priority ?? 0) == priority }
+        }
+        let cooled = choices.filter { row in
+            state.lineDates[row.id].map { event.date.timeIntervalSince($0) >= Double(row.cooldownSeconds ?? 0) } ?? true
+        }
+        if !cooled.isEmpty { choices = cooled }
+        let unused = choices.filter { !recent.contains($0.id) }
+        if !unused.isEmpty { choices = unused }
+        else if let oldest = recent.first(where: { id in choices.contains { $0.id == id } }) {
+            choices = choices.filter { $0.id == oldest }
+        }
+        func weight(_ row: CharacterPack.Record) -> Int {
+            min(1_000_000, row.weight) * min(1_000_000, pack?.behaviors[row.behaviorID ?? ""]?.weight ?? 1)
+        }
+        let total = choices.reduce(0) { $0 + weight($1) }
+        var ticket = total > 0 ? Int.random(in: 0..<total, using: &rng) : 0
+        let selected = choices.first { ticket -= weight($0); return ticket < 0 }
+        if selected == nil && event.kind == .calendarChanged { return false }
+        let response: String
+        if let row = selected, let id = row.behaviorID, let action = pack?.behaviors[id] {
+            response = row.id
+            state.behavior = action.to
+            state.behaviorDates[id] = event.date
+            state.lineDates[row.id] = event.date
+            histories[hero.rawValue] = Array((recent.filter { $0 != row.id } + [row.id]).suffix(Self.historyLimit))
+            if trigger == "easterEgg", let find = availableFind(at: event.date) {
+                unlocks.append(Unlock(id: find.id, date: event.date))
+            }
+            switch row.category {
+            case "night": state.mood = "sleepy"
+            case "morning", "compliment": state.mood = "happy"
+            case "rare": state.mood = "surprised"
+            default: state.mood = pack?.disposition.defaultMood ?? "neutral"
+            }
+            if actualContact {
+                if repeated { state.irritation = min(20, state.irritation + 1) }
+                state.affinity = min(100, state.affinity + 1)
+                state.energy = max(0, state.energy - 1)
+                state.curiosity = min(100, state.curiosity + (state.mood == "curious" ? 2 : 1))
+            }
+        } else {
+            response = morning != nil ? "greeting" : (trigger == "lateInteraction" ? "rest" : "idle")
+            state.behavior = "idle"
+            state.mood = pack?.disposition.recovery ?? "neutral"
+        }
+        if let morning { greetingDays[hero.rawValue] = morning }
+        state.updatedAt = max(state.updatedAt, event.date)
+        state.lastEvent = event.id
+        state.lastKind = repeated ? .repeatInteraction : (CompanionEvent.Kind(rawValue: trigger) ?? event.kind)
+        state.lastSource = event.source
+        state.lastPriority = event.kind.priority
+        state.substitutions = selected?.variables.flatMap { names in
+            names.isEmpty ? nil : substitutions.filter { names.contains($0.key) }
+        }
+        if actualContact { state.lastInteractionAt = max(state.lastInteractionAt ?? event.date, event.date) }
+        activities[hero.rawValue] = state
+        contact = Contact(hero: hero, date: event.date, response: response)
+        if tap, hero == .maomao || hero == .jinwoo { contact?.portalOnRight = nextSide }
         return true
     }
 
-    mutating func react<R: RandomNumberGenerator>(using rng: inout R) {
-        guard mode == .normal || mode == .eco else { return }
-        contact = nil
-        var recent = histories[hero.rawValue] ?? [reaction.id]
-        let lines = hero.dialogue
-        var candidates = lines.filter { !recent.contains($0.id) }
-        if candidates.isEmpty {
-            // All lines were used. Release the least recently selected one first.
-            for id in recent {
-                if let oldest = lines.first(where: { $0.id == id }) {
-                    candidates = [oldest]
-                    break
-                }
-            }
-        }
-        guard let next = candidates.randomElement(using: &rng) else { return }
-        recent.removeAll { $0 == next.id }
-        recent.append(next.id)
-        histories[hero.rawValue] = Array(recent.suffix(Self.historyLimit))
+    private func availableFind(at date: Date) -> Find? {
+        guard mode == .normal, let pack = hero.pack else { return nil }
+        if let last = unlocks.last, date.timeIntervalSince(last.date) < 21600 { return nil }
+        return pack.finds.first { find in !unlocks.contains { $0.id == find.id } }
     }
+
+    mutating func discover(at date: Date) -> Bool {
+        guard availableFind(at: date) != nil else { return false }
+        let event = CompanionEvent(id: UUID(), source: .app, kind: .easterEgg, date: date)
+        var rng = SystemRandomNumberGenerator()
+        let before = unlocks.count
+        _ = handle([event], at: date, calendar: .current, using: &rng)
+        return unlocks.count > before
+    }
+
 }

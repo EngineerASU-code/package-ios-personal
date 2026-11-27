@@ -1,6 +1,50 @@
+import AppIntents
 import SwiftUI
 import UserNotifications
 import WidgetKit
+
+struct CreateLocalReminderIntent: AppIntent {
+    static var title: LocalizedStringResource = "Создать напоминание"
+    static var openAppWhenRun = true
+
+    @Parameter(title: "Название", requestValueDialog: "О чём напомнить?")
+    var taskTitle: String
+
+    @Parameter(title: "Срок", requestValueDialog: "Когда напомнить?")
+    var dueDate: Date
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let name = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw $taskTitle.needsValueError("О чём напомнить?") }
+        guard dueDate > Date() else { throw $dueDate.needsValueError("На какое время в будущем поставить напоминание?") }
+
+        try Store.shared().update { state in
+            guard !state.reminders.contains(where: {
+                $0.title == name && $0.dueAt == dueDate && $0.completedAt == nil &&
+                    $0.notificationEnabled && $0.recurrence == .once && $0.snoozedUntil == nil
+            }) else { return }
+            state.reminders.append(LocalReminder(title: name, dueAt: dueDate, notificationEnabled: true, revision: 1))
+            state.respond(to: .reminderCreated)
+        }
+        WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
+        let center = UNUserNotificationCenter.current()
+        if await center.notificationSettings().authorizationStatus == .notDetermined {
+            _ = try? await center.requestAuthorization(options: [.alert])
+        }
+        let status = await ReminderNotifications.shared.reconcile()
+        if status.isEmpty { return .result(dialog: "Напоминание сохранено.") }
+        return .result(dialog: "Напоминание сохранено. \(status)")
+    }
+}
+
+struct CompanionAppShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: CreateLocalReminderIntent(), phrases: [
+            "Создай напоминание в \(.applicationName)",
+            "Добавь задачу в \(.applicationName)"
+        ], shortTitle: "Создать напоминание", systemImageName: "checklist")
+    }
+}
 
 actor ReminderNotifications {
     static let shared = ReminderNotifications()
@@ -21,8 +65,12 @@ actor ReminderNotifications {
     @discardableResult func apply(id: UUID, revision: Int, snoozeMinutes: Int?) async throws -> String {
         try Store.shared().update { state in
             guard let i = state.reminders.firstIndex(where: { $0.id == id && $0.revision == revision }) else { return }
-            if let minutes = snoozeMinutes { state.reminders[i].snooze(minutes: minutes, at: Date()) }
-            else { state.reminders[i].complete(at: Date()) }
+            let now = Date()
+            if let minutes = snoozeMinutes { state.reminders[i].snooze(minutes: minutes, at: now) }
+            else { state.reminders[i].complete(at: now) }
+            if state.reminders[i].revision != revision {
+                state.respond(to: snoozeMinutes == nil ? .reminderCompleted : .reminderSnoozed, at: now)
+            }
         }
         WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
         return await reconcile()
@@ -192,6 +240,7 @@ struct ReminderList: View {
             } else {
                 guard !state.reminders.contains(where: { $0.id == item.id }) else { return }
                 state.reminders.append(item)
+                state.respond(to: .reminderCreated)
             }
             applied = true
         }
