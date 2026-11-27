@@ -1,8 +1,18 @@
 import EventKit
 import XCTest
+import UserNotifications
 @testable import MyCompanion
 
 final class CalendarIntegrationTests: XCTestCase {
+    func testSystemDeliveredReminder() async throws {
+        let center = UNUserNotificationCenter.current()
+        let delivered = await center.deliveredNotifications()
+        let item = try XCTUnwrap(delivered.first { $0.request.identifier == "mycompanion.preview" })
+        XCTAssertEqual(item.request.content.body, "Время для небольшой передышки.")
+        let pending = await center.pendingNotificationRequests()
+        XCTAssertFalse(pending.contains { $0.identifier == item.request.identifier })
+    }
+
     @MainActor func testSnapshotPrivacyAndWithdrawal() async throws {
         XCTAssertEqual(EKEventStore.authorizationStatus(for: .event), .fullAccess)
         let service = CalendarController.shared

@@ -34,11 +34,13 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test -project MyCompanion.xcodeproj -scheme Reminders -destination "platform=iOS Simulator,id=$DEVICE" ONLY_ACTIVE_ARCH=YES -parallel-testing-enabled NO -only-testing:"WidgetUITests/ReminderUITests/$TEST" -resultBundlePath Reminder.xcresult 2>&1 | tee xcodebuild.log
-      - name: Check EventKit snapshot with an actual event
-        if: matrix.test == 'testCalendarPrivacy'
+      - name: Verify records held by EventKit or Notification Center
+        if: matrix.test == 'testCalendarPrivacy' || matrix.test == 'testScheduleReplaceCancel'
+        env:
+          CASE: ${{ matrix.test == 'testCalendarPrivacy' && 'testSnapshotPrivacyAndWithdrawal' || 'testSystemDeliveredReminder' }}
         run: |
           set -o pipefail
-          xcodebuild test -project MyCompanion.xcodeproj -scheme Reminders -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -only-testing:WidgetProviderTests/CalendarIntegrationTests -resultBundlePath Calendar.xcresult 2>&1 | tee calendar-test.log
+          xcodebuild test -project MyCompanion.xcodeproj -scheme Reminders -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -only-testing:"WidgetProviderTests/CalendarIntegrationTests/$CASE" -resultBundlePath Calendar.xcresult 2>&1 | tee calendar-test.log
       - name: Export screenshots
         if: always() && hashFiles('Reminder.xcresult/Info.plist') != ''
         run: xcrun xcresulttool export attachments --path Reminder.xcresult --output-path screens

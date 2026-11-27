@@ -84,5 +84,12 @@ final class ReminderUITests: XCTestCase {
         evidence.name = "reminder-cancelled"
         evidence.lifetime = .keepAlways
         add(evidence)
+
+        // Keep the app in the background while iOS reaches the notification trigger.
+        app.buttons["Напомнить через минуту"].tap()
+        XCTAssertTrue(scheduled.waitForExistence(timeout: 8))
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 70)
+
     }
 }
