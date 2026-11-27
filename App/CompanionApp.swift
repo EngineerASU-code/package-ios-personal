@@ -47,7 +47,7 @@ struct Home: View {
                 List(Hero.allCases, id: \.self) { hero in
                     Button { select(hero) } label: {
                         HStack {
-                            Image(systemName: hero.sceneSymbol).foregroundStyle(hero.sceneColor)
+                            CompanionFigure(hero: hero).frame(width: 48, height: 56)
                             VStack(alignment: .leading) {
                                 Text(hero.name).font(.headline)
                                 Text(hero.dialogue.first?.text ?? "").font(.callout)

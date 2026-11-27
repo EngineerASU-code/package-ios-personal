@@ -154,7 +154,7 @@ struct WidgetScene: View {
                     HStack(spacing: 8) {
                         ZStack {
                             Ellipse().strokeBorder(.secondary, lineWidth: 2)
-                            Image(systemName: symbol)
+                            CompanionFigure(hero: entry.state.hero)
                                 .id(portalOnRight)
                                 .transition(.opacity)
                         }
@@ -165,7 +165,7 @@ struct WidgetScene: View {
                         Text(entry.state.hero.name).font(.headline)
                     }
                 } else {
-                    Label(entry.state.hero.name, systemImage: symbol).font(.headline)
+                    HStack { CompanionFigure(hero: entry.state.hero).frame(width: 32, height: 36); Text(entry.state.hero.name).font(.headline) }
                 }
                 if family != .systemSmall || speech.isEmpty { Text(line.action).font(.caption) }
                 if !speech.isEmpty {
