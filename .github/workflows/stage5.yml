@@ -31,7 +31,8 @@ jobs:
           xcrun simctl io "$DEVICE" recordVideo evidence/widget.mp4 &
           recorder=$!
           trap 'kill -INT "$recorder" 2>/dev/null || true; wait "$recorder" || true' EXIT
-          xcodebuild test -project MyCompanion.xcodeproj -scheme Stage5 -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -resultBundlePath evidence/Widget.xcresult
+          set -o pipefail
+          xcodebuild test -project MyCompanion.xcodeproj -scheme Stage5 -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -resultBundlePath evidence/Widget.xcresult 2>&1 | tee evidence/xcodebuild.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

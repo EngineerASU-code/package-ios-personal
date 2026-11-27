@@ -6,7 +6,7 @@ tests = project.new_target(:ui_test_bundle, 'WidgetUITests', :ios, '17.0')
 tests.add_dependency(app)
 tests.add_file_references([project.main_group.new_file('Scripts/stage5/WidgetUITests.swift')])
 tests.build_configurations.each do |config|
-  config.build_settings.merge!('TEST_TARGET_NAME' => app.name, 'GENERATE_INFOPLIST_FILE' => 'YES',
+  config.build_settings.merge!('PRODUCT_NAME' => tests.name, 'TEST_TARGET_NAME' => app.name, 'GENERATE_INFOPLIST_FILE' => 'YES',
     'PRODUCT_BUNDLE_IDENTIFIER' => 'local.mycompanion.uitests', 'SWIFT_VERSION' => '5.0')
 end
 project.save
