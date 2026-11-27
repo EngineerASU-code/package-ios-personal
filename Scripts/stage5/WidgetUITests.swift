@@ -33,17 +33,21 @@ final class WidgetUITests: XCTestCase {
         // SpringBoard exposes third-party widgets as a single icon on some runtimes.
         let widget = home.icons.matching(NSPredicate(format: "label CONTAINS %@", "Мой Компаньон")).firstMatch
         let reaction = home.buttons.matching(NSPredicate(format: "label CONTAINS %@", heroName)).firstMatch
-        let target = reaction.waitForExistence(timeout: 8) ? reaction : widget
+        let hasReactionLabel = reaction.waitForExistence(timeout: 8)
+        let target = hasReactionLabel ? reaction : widget
         capture("medium-before")
         XCTAssertTrue(target.exists && target.frame.width > 130)
-        let oldLabel = reaction.label
+        let oldLabel = hasReactionLabel ? reaction.label : nil
+        let oldWidget = oldLabel == nil ? widget.screenshot().pngRepresentation : nil
         target.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.44)).tap()
-        // Wait for the system transition and the asynchronous AppIntent reload.
-        Thread.sleep(forTimeInterval: 4)
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            if let oldLabel {
+                return reaction.exists && reaction.label.contains(heroName) && reaction.label != oldLabel
+            }
+            return widget.exists && widget.frame.width > 130 && widget.screenshot().pngRepresentation != oldWidget
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 20), .completed)
         capture("medium-after")
-        XCTAssertTrue(reaction.exists)
-        XCTAssertTrue(reaction.label.contains(heroName))
-        XCTAssertNotEqual(reaction.label, oldLabel)
         app.activate()
         app.tabBars.buttons["Настройки"].tap()
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Обычный")).firstMatch.tap()

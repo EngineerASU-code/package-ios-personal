@@ -529,30 +529,36 @@ private struct JinshiFan: View {
 
     var body: some View {
         Canvas { context, size in
-            let side = min(size.width, size.height)
-            let pivot = CGPoint(x: size.width / 2 + side * 0.10, y: size.height / 2 + side * 0.17)
-            context.translateBy(x: pivot.x, y: pivot.y)
-            context.rotate(by: .degrees(-18 + 10 * opening))
-            let radius = side * 0.31
-            let halfAngle = 4 + 59 * opening
-            let gold = Color(red: 0.96, green: 0.79, blue: 0.51)
-            for leaf in 0..<10 {
-                let a = (-90 - halfAngle + Double(leaf) * halfAngle / 5) * .pi / 180
-                let b = a + halfAngle * .pi / 900
-                let outer = CGPoint(x: radius * cos(a), y: radius * sin(a))
-                let next = CGPoint(x: radius * cos(b), y: radius * sin(b))
-                var panel = Path()
-                panel.move(to: .zero)
-                panel.addLine(to: outer)
-                panel.addLine(to: next)
-                panel.closeSubpath()
-                context.fill(panel, with: .color(leaf.isMultiple(of: 2)
-                    ? Color(red: 0.52, green: 0.28, blue: 0.46)
-                    : Color(red: 0.71, green: 0.46, blue: 0.60)))
-                context.stroke(panel, with: .color(gold), lineWidth: side * 0.005)
-            }
-            context.fill(Path(ellipseIn: CGRect(x: -2, y: -2, width: 4, height: 4)), with: .color(gold))
+            draw(in: context, size: size)
         }
+    }
+
+    private func draw(in source: GraphicsContext, size: CGSize) {
+        var context = source
+        let side = min(size.width, size.height)
+        let pivot = CGPoint(x: size.width / 2 + side * 0.10, y: size.height / 2 + side * 0.17)
+        context.translateBy(x: pivot.x, y: pivot.y)
+        context.rotate(by: .degrees(-18 + 10 * opening))
+        let radius = side * 0.31
+        let halfAngle = 4 + 59 * opening
+        let gold = Color(red: 0.96, green: 0.79, blue: 0.51)
+        for leaf in 0..<10 {
+            let degrees = -90.0 - halfAngle + Double(leaf) * (halfAngle / 5.0)
+            let a = degrees * Double.pi / 180.0
+            let b = a + halfAngle * Double.pi / 900.0
+            let outer = CGPoint(x: radius * CGFloat(cos(a)), y: radius * CGFloat(sin(a)))
+            let next = CGPoint(x: radius * CGFloat(cos(b)), y: radius * CGFloat(sin(b)))
+            var panel = Path()
+            panel.move(to: .zero)
+            panel.addLine(to: outer)
+            panel.addLine(to: next)
+            panel.closeSubpath()
+            context.fill(panel, with: .color(leaf.isMultiple(of: 2)
+                ? Color(red: 0.52, green: 0.28, blue: 0.46)
+                : Color(red: 0.71, green: 0.46, blue: 0.60)))
+            context.stroke(panel, with: .color(gold), lineWidth: side * 0.005)
+        }
+        context.fill(Path(ellipseIn: CGRect(x: -2, y: -2, width: 4, height: 4)), with: .color(gold))
     }
 }
 
