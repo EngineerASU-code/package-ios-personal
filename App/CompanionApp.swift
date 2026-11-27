@@ -29,6 +29,7 @@ struct Home: View {
         var id: String { find.id }
     }
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var state = Companion()
     @ObservedObject private var calendarController = CalendarController.shared
     @ObservedObject private var notificationNavigation = NotificationNavigation.shared
@@ -51,6 +52,14 @@ struct Home: View {
             NavigationStack {
                 ScrollView {
                     VStack(spacing: 16) {
+                        if typeSize.isAccessibilitySize {
+                            Text("Мой Компаньон")
+                                .font(.title.bold())
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityAddTraits(.isHeader)
+                                .accessibilityIdentifier("companion-heading")
+                        }
                         Button {
                             let now = Date()
                             if save({ value in
@@ -101,7 +110,9 @@ struct Home: View {
                         if !message.isEmpty { Text(message).font(.footnote) }
                         NavigationLink("Галерея находок") { gallery }
                     }.padding()
-                }.navigationTitle("Мой Компаньон")
+                }
+                .navigationTitle("Мой Компаньон")
+                .toolbar(typeSize.isAccessibilitySize ? .hidden : .visible, for: .navigationBar)
             }.tabItem { Label("Компаньон", systemImage: "bubble.left") }.tag(0)
             NavigationStack { CalendarPanel() }
                 .tabItem { Label("Календарь", systemImage: "calendar") }.tag(1)

@@ -119,7 +119,10 @@ final class ReminderUITests: XCTestCase {
         app.terminate()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
-        XCTAssertTrue(app.navigationBars["Мой Компаньон"].waitForExistence(timeout: 8))
+        let heading = app.staticTexts["companion-heading"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 8))
+        XCTAssertEqual(heading.label, "Мой Компаньон")
+        XCTAssertFalse(app.navigationBars["Мой Компаньон"].exists)
         XCTAssertFalse(skipWelcome.exists)
         capture("Компаньон крупный текст")
         let heroScene = app.buttons["companion-interaction"]
