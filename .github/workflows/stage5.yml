@@ -34,6 +34,14 @@ jobs:
           trap 'xcrun simctl io "$DEVICE" screenshot evidence/last-screen.png || true; kill -INT "$recorder" 2>/dev/null || true; wait "$recorder" || true' EXIT
           set -o pipefail
           xcodebuild test -project MyCompanion.xcodeproj -scheme Stage5 -destination "platform=iOS Simulator,id=$DEVICE" ONLY_ACTIVE_ARCH=YES -parallel-testing-enabled NO -resultBundlePath evidence/Widget.xcresult 2>&1 | tee evidence/xcodebuild.log
+      - name: Capture simulator Lock Screen
+        if: always() && env.DEVICE != ''
+        run: |
+          open -a Simulator --args -CurrentDeviceUDID "$DEVICE"
+          osascript -e 'tell application "Simulator" to activate'
+          osascript -e 'tell application "System Events" to keystroke "l" using command down'
+          sleep 2
+          xcrun simctl io "$DEVICE" screenshot evidence/lock-screen.png
       - name: Export UI screenshots
         if: always() && hashFiles('evidence/Widget.xcresult/Info.plist') != ''
         run: xcrun xcresulttool export attachments --path evidence/Widget.xcresult --output-path evidence/screens
