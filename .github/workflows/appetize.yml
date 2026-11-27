@@ -27,7 +27,7 @@ jobs:
         run: |
           app=build/Build/Products/Debug-iphonesimulator/MyCompanion.app
           test -d "$app/PlugIns/CompanionWidget.appex"
-          lipo -verify_arch arm64 "$app/MyCompanion"
+          lipo "$app/MyCompanion" -verify_arch arm64
           ditto -c -k --keepParent "$app" MyCompanion-Appetize.zip
           unzip -tq MyCompanion-Appetize.zip
       - name: Check eligibility to share the simulator package
