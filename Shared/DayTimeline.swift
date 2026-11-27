@@ -62,7 +62,7 @@ enum DayTimeline {
         return dates
     }
 
-    static func display(_ state: Companion, at date: Date, calendar: Calendar) -> Reaction {
+    static func display(_ state: Companion, at date: Date, calendar: Calendar, showsTask: Bool = true) -> Reaction {
         guard state.mode == .normal || state.mode == .eco else { return state.reaction }
         let hour = calendar.component(.hour, from: date)
         let period = DayPeriod(hour: hour)
@@ -73,14 +73,33 @@ enum DayTimeline {
         }
         let slot = Int(floor(date.timeIntervalSince1970 / (state.mode == .eco ? 7200 : 3600)))
         let seed = state.hero.rawValue.utf8.reduce(0) { $0 + Int($1) }
-        let passive = state.hero.pack?.records.filter { $0.category == "day" }.map(\.reaction) ?? []
-        let lines = passive.isEmpty ? state.hero.dialogue : passive
-        let index = ((slot + seed) % lines.count + lines.count) % lines.count
+
         if period == .night || period == .lateNight {
             let action = period == .night ? "Готовится ко сну" : "Спит"
             return Reaction("sleep", "", "\(period.caption) · \(action)", emotion: .sleepy)
         }
-        let line = lines[index]
+        let phase = (slot + seed).quotientAndRemainder(dividingBy: 3)
+        let rotation = (phase.remainder + 3) % 3
+        let hasDueTask = showsTask && rotation == 2 && state.reminders.contains { task in
+            guard task.completedAt == nil, task.createdAt <= date, let target = task.target else { return false }
+            return target <= date
+        }
+        let category = hasDueTask ? "reminder" : (rotation == 1 ? "compliment" : "day")
+        let trigger = hasDueTask ? "reminderDue" : "randomSlot"
+        let facts: Set<String> = hasDueTask ? ["reminderDue"] : []
+        let rows = state.hero.pack?.records ?? []
+        func eligible(_ category: String, trigger: String) -> [CharacterPack.Record] {
+            rows.filter {
+                $0.category == category && $0.weight > 0 && $0.triggers.contains(trigger)
+                    && $0.channels.contains("app") && $0.channels.contains("widget")
+                    && facts.isSuperset(of: $0.requires)
+            }
+        }
+        var choices = eligible(category, trigger: trigger)
+        if choices.isEmpty && category != "day" { choices = eligible("day", trigger: "randomSlot") }
+        guard !choices.isEmpty else { return Reaction("idle", "Я здесь.", period.caption) }
+        let index = (phase.quotient % choices.count + choices.count) % choices.count
+        let line = choices[index].reaction
         return Reaction(line.id, line.text, "\(period.caption) · \(line.action)", emotion: line.emotion)
     }
 }

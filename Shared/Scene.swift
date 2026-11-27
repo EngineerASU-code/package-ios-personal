@@ -11,6 +11,7 @@ extension Hero {
 
 struct CompanionScene: View {
     let state: Companion
+    let date: Date
     var display: Reaction? = nil
     var portrait = false
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -28,18 +29,35 @@ struct CompanionScene: View {
         .foregroundStyle(.white).padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
-        .background { HeroBackdrop(hero: state.hero) }
+        .background { HeroBackdrop(hero: state.hero, date: date, mode: state.mode) }
         .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 }
 
 struct HeroBackdrop: View {
     let hero: Hero
+    let date: Date
+    let mode: CompanionMode
+
+    private var artwork: UIImage? {
+        let directory = "Characters/" + hero.rawValue + "/"
+        if mode == .normal || mode == .eco {
+            let variant: String?
+            switch DayPeriod(hour: Calendar.current.component(.hour, from: date)) {
+            case .morning, .day: variant = "scene-day.jpg"
+            case .night, .lateNight: variant = "scene-night.jpg"
+            case .dawn, .evening: variant = nil
+            }
+            if let variant, let image = UIImage(named: directory + variant) { return image }
+        }
+        return UIImage(named: directory + "scene.jpg")
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 hero.sceneColor
-                if let art = UIImage(named: "Characters/" + hero.rawValue + "/scene.jpg") {
+                if let art = artwork {
                     Image(uiImage: art).resizable().scaledToFill()
                 }
                 LinearGradient(colors: [.black.opacity(0.12), .black.opacity(0.58)],

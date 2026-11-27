@@ -32,6 +32,16 @@
       "file": "scene.jpg",
       "source": "Original generated artwork for local personal use",
       "publicRelease": false
+    },
+    {
+      "file": "scene-day.jpg",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    },
+    {
+      "file": "scene-night.jpg",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
     }
   ]
 }

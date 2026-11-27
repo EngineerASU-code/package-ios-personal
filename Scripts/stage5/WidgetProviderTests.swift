@@ -1,5 +1,6 @@
 import SwiftUI
 import WidgetKit
+import UIKit
 import Foundation
 import XCTest
 
@@ -27,6 +28,63 @@ final class WidgetProviderTests: XCTestCase {
                 add(attachment)
             }
         }
+    }
+
+    @MainActor func testSixHeroesRenderThreeBundledBackdropsOnSimulator() throws {
+        let variants = [(hour: 6, file: "scene.jpg"), (hour: 13, file: "scene-day.jpg"),
+                        (hour: 23, file: "scene-night.jpg")]
+        let calendar = Calendar.current
+        let tile = CGSize(width: 252, height: 126)
+        let labelHeight: CGFloat = 26
+        let rowHeight = tile.height + labelHeight
+        var images: [(hero: Hero, file: String, image: UIImage)] = []
+        var sources = Set<Data>()
+        var renders = Set<Data>()
+        for hero in Hero.allCases {
+            for variant in variants {
+                let path = "Characters/\(hero.rawValue)/\(variant.file)"
+                let source = try XCTUnwrap(UIImage(named: path), path)
+                let sourcePixels = try XCTUnwrap(source.cgImage, path)
+                XCTAssertGreaterThan(sourcePixels.width, 1, path)
+                XCTAssertGreaterThan(sourcePixels.height, 1, path)
+                let url = try XCTUnwrap(Bundle.main.resourceURL).appendingPathComponent(path)
+                XCTAssertTrue(sources.insert(try Data(contentsOf: url)).inserted, "Повтор файла \(path)")
+
+                let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 2,
+                                                                            day: 9, hour: variant.hour)))
+                let backdrop = HeroBackdrop(hero: hero, date: date, mode: .normal)
+                    .frame(width: tile.width, height: tile.height)
+                let renderer = ImageRenderer(content: backdrop)
+                renderer.scale = 1
+                let image = try XCTUnwrap(renderer.uiImage, path)
+                XCTAssertEqual(image.size, tile, path)
+                XCTAssertTrue(renders.insert(try XCTUnwrap(image.pngData())).inserted,
+                              "Повтор отрисованного фона \(path)")
+                images.append((hero, variant.file, image))
+            }
+        }
+        XCTAssertEqual(images.count, 18)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let size = CGSize(width: tile.width * CGFloat(variants.count), height: rowHeight * CGFloat(Hero.allCases.count))
+        let sheet = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            for (index, item) in images.enumerated() {
+                let x = CGFloat(index % variants.count) * tile.width
+                let y = CGFloat(index / variants.count) * rowHeight
+                item.image.draw(in: CGRect(origin: CGPoint(x: x, y: y), size: tile))
+                let label = "\(item.hero.name) · \(item.file)" as NSString
+                label.draw(at: CGPoint(x: x + 4, y: y + tile.height + 3), withAttributes: [
+                    .font: UIFont.systemFont(ofSize: 14), .foregroundColor: UIColor.white
+                ])
+            }
+        }
+        let attachment = XCTAttachment(image: sheet)
+        attachment.name = "six-heroes-three-backdrops"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     func testConfigurationsShareModeAndKeepIndependentContacts() async throws {

@@ -9,6 +9,51 @@ final class DayTimelineTests: XCTestCase {
         return result
     }
 
+    func testPassiveDialogueUsesOnlyConfirmedFactsAndKeepsReminderTitlesPrivate() throws {
+        let cal = try calendar("UTC")
+        let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-29T09:00:00Z"))
+        for hero in Hero.allCases {
+            var state = Companion()
+            state.hero = hero
+            var task = LocalReminder()
+            task.title = "confidential-title"
+            task.createdAt = start.addingTimeInterval(-7200)
+            task.dueAt = start.addingTimeInterval(-60)
+            state.reminders = [task]
+            var categories = Set<String>()
+            for offset in 0..<9 {
+                let date = start.addingTimeInterval(Double(offset * 3600))
+                let line = DayTimeline.display(state, at: date, calendar: cal)
+                let record = try XCTUnwrap(hero.pack?.byID[line.id])
+                categories.insert(record.category)
+                XCTAssertFalse(line.text.contains(task.title))
+                XCTAssertEqual(line.id, DayTimeline.display(state, at: date.addingTimeInterval(30), calendar: cal).id)
+                if record.category == "reminder" {
+                    XCTAssertTrue(record.triggers.contains("reminderDue"))
+                    let hidden = DayTimeline.display(state, at: date, calendar: cal, showsTask: false)
+                    XCTAssertNotEqual(hero.pack?.byID[hidden.id]?.category, "reminder")
+                    for variant in 0..<5 {
+                        var other = state
+                        switch variant {
+                        case 0: other.reminders = []
+                        case 1: other.reminders[0].completedAt = start
+                        case 2: other.reminders[0].snoozedUntil = date.addingTimeInterval(600)
+                        case 3: other.reminders[0].dueAt = nil
+                        default: other.reminders[0].createdAt = date.addingTimeInterval(600)
+                        }
+                        let response = DayTimeline.display(other, at: date, calendar: cal)
+                        XCTAssertNotEqual(hero.pack?.byID[response.id]?.category, "reminder")
+                    }
+                }
+            }
+            XCTAssertEqual(categories, ["day", "compliment", "reminder"])
+            for mode in [CompanionMode.safe, .paused] {
+                state.mode = mode
+                XCTAssertEqual(DayTimeline.display(state, at: start, calendar: cal).id, state.reaction.id)
+            }
+        }
+    }
+
     func testLocalPeriods() {
         let periods: [DayPeriod] = [.lateNight, .dawn, .morning, .day, .evening, .night]
         for (hour, expected) in zip([0, 5, 8, 12, 18, 22], periods) {

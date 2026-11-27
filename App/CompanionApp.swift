@@ -24,7 +24,8 @@ struct Home: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         Button { save { $0.react() } } label: {
-                            CompanionScene(state: state, display: DayTimeline.display(state, at: Date(), calendar: .current), portrait: portrait)
+                            let now = Date()
+                            CompanionScene(state: state, date: now, display: DayTimeline.display(state, at: now, calendar: .current), portrait: portrait)
                                 .frame(minHeight: 150)
                         }
                         .buttonStyle(.plain)
@@ -52,7 +53,7 @@ struct Home: View {
             NavigationStack {
                 List(Hero.allCases, id: \.self) { hero in
                     NavigationLink {
-                        CharacterPreview(hero: hero, selected: state.hero == hero) { select(hero) }
+                        CharacterPreview(hero: hero, mode: state.mode, selected: state.hero == hero) { select(hero) }
                     } label: {
                         HStack {
                             CompanionFigure(hero: hero).frame(width: 48, height: 56)
@@ -206,6 +207,7 @@ struct Home: View {
 
 private struct CharacterPreview: View {
     let hero: Hero
+    let mode: CompanionMode
     let selected: Bool
     let select: () -> Void
     @State private var emotion: ChibiEmotion = .neutral
@@ -216,7 +218,7 @@ private struct CharacterPreview: View {
             VStack(spacing: 18) {
                 CompanionFigure(hero: hero, portrait: portrait, emotion: emotion)
                     .frame(maxWidth: .infinity).frame(height: 264)
-                    .background { HeroBackdrop(hero: hero) }.clipShape(RoundedRectangle(cornerRadius: 20))
+                    .background { HeroBackdrop(hero: hero, date: Date(), mode: mode) }.clipShape(RoundedRectangle(cornerRadius: 20))
                 Picker("Форма героя", selection: $portrait) {
                     Text("Чиби").tag(false)
                     Text("Портрет").tag(true)

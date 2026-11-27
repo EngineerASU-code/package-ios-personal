@@ -77,7 +77,7 @@ struct Provider: AppIntentTimelineProvider {
             state.calendarSnapshot = state.calendarSnapshot.filtered(by: calendarPrivacy)
             let now = Date()
             return Entry(date: now, state: state, settings: configuration,
-                         display: DayTimeline.display(state, at: now, calendar: .current))
+                         display: DayTimeline.display(state, at: now, calendar: .current, showsTask: configuration.showsTask))
         } catch {
             return Entry(date: Date(), state: Companion(), settings: configuration, available: false)
         }
@@ -112,7 +112,7 @@ struct Provider: AppIntentTimelineProvider {
         let dates = scheduled.sorted()
         let entries = dates.map { date in
             Entry(date: date, state: first.state, settings: configuration,
-                  display: DayTimeline.display(first.state, at: date, calendar: calendar))
+                  display: DayTimeline.display(first.state, at: date, calendar: calendar, showsTask: configuration.showsTask))
         }
         return Timeline(entries: entries, policy: .after(first.date.addingTimeInterval(12 * 3600)))
     }
@@ -181,11 +181,11 @@ struct WidgetScene: View {
         default:
             VStack(alignment: .leading, spacing: family == .systemSmall ? 4 : 10) {
                 if family == .systemSmall {
-                    figure.frame(maxWidth: .infinity)
+                    figure.frame(maxWidth: .infinity, minHeight: 48)
                     Text(entry.state.hero.name).font(.caption.bold())
                     if !speech.isEmpty {
-                        Text(entry.state.hero.pack?.byID[line.id]?.shortText ?? line.action)
-                            .font(.caption).foregroundStyle(.black).lineLimit(2)
+                        Text(entry.state.hero.pack?.byID[line.id]?.shortText ?? speech)
+                            .font(.caption).foregroundStyle(.black).lineLimit(3)
                             .padding(4).background(.white, in: RoundedRectangle(cornerRadius: 6))
                     }
                 } else {
@@ -260,7 +260,7 @@ struct WidgetScene: View {
         .transaction { if !animates { $0.disablesAnimations = true; $0.animation = nil } }
         .containerBackground(for: .widget) {
             if entry.available && [.systemSmall, .systemMedium, .systemLarge].contains(family) {
-                HeroBackdrop(hero: entry.state.hero)
+                HeroBackdrop(hero: entry.state.hero, date: entry.date, mode: entry.state.mode)
             } else { Color.clear }
         }
     }
