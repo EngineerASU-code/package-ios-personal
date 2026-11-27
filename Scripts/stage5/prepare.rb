@@ -14,8 +14,13 @@ end
 widget = project.targets.find { |target| target.name == 'CompanionWidget' }
 provider_tests = project.new_target(:unit_test_bundle, 'WidgetProviderTests', :ios, '17.0')
 provider_tests.add_dependency(app)
-provider_tests.add_file_references(widget.source_build_phase.files_references)
-provider_tests.add_file_references([project.main_group.new_file('Scripts/stage5/WidgetProviderTests.swift')])
+if reminders
+  app.build_configurations.each { |config| config.build_settings['ENABLE_TESTABILITY'] = 'YES' }
+  provider_tests.add_file_references([project.main_group.new_file('Scripts/stage6/CalendarIntegrationTests.swift')])
+else
+  provider_tests.add_file_references(widget.source_build_phase.files_references)
+  provider_tests.add_file_references([project.main_group.new_file('Scripts/stage5/WidgetProviderTests.swift')])
+end
 provider_tests.build_configurations.each do |config|
   config.build_settings.merge!(
     'PRODUCT_NAME' => provider_tests.name,
@@ -30,5 +35,5 @@ end
 project.save
 scheme = Xcodeproj::XCScheme.new
 scheme.configure_with_targets(app, tests)
-scheme.add_test_target(provider_tests) unless reminders
+scheme.add_test_target(provider_tests)
 scheme.save_as(project.path, reminders ? 'Reminders' : 'Stage5', true)

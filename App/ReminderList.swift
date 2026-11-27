@@ -272,6 +272,6 @@ private struct ReminderEditor: View {
             }
             dismiss()
         } catch ReminderEditError.changed { error = "Задача уже изменилась. Закройте форму и откройте её заново." }
-        catch { error = "Не удалось сохранить задачу. Попробуйте ещё раз." }
+        catch { self.error = "Не удалось сохранить задачу. Попробуйте ещё раз." }
     }
 }

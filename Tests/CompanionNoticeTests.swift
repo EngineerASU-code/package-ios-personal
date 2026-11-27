@@ -40,6 +40,43 @@ final class CompanionNoticeTests: XCTestCase {
         XCTAssertEqual(repeatSlots.first?.date.timeIntervalSince(autumn), 5400)
     }
 
+    func testBedtimeCannotRepeatAfterMovingAcrossFiveAMAndRollingClockBack() throws {
+        let midnight = calendar.date(from: DateComponents(year: 2026, month: 11, day: 1))!
+        let early = CompanionNoticePlan(morning: 8 * 60, bedtime: 90, quietStart: 0, quietEnd: 0)
+        var late = early
+        late.bedtime = 22 * 60
+        var ledger = CompanionNoticeLedger()
+        let firstNight = try XCTUnwrap(early.slots(hero: .gojo, now: midnight, calendar: calendar).first)
+        ledger.reserve(firstNight, calendar: calendar)
+        // Roll the clock back before the first 01:30 in the DST fold after the request left pending.
+        let updated = late.slots(hero: .gojo, now: midnight, calendar: calendar)
+        XCTAssertNotEqual(firstNight.id, updated.first { $0.category == firstNight.category }?.id)
+        let remaining = ledger.reconcile(now: midnight, pending: [], slots: updated, calendar: calendar)
+        let today = remaining.filter { calendar.isDate($0.date, inSameDayAs: midnight) }
+        XCTAssertEqual(today.map(\.category), ["companion.greeting"])
+        ledger.reserve(try XCTUnwrap(today.first), calendar: calendar)
+        let later = ledger.reconcile(now: midnight, pending: [], slots: updated, calendar: calendar)
+        XCTAssertFalse(later.contains { calendar.isDate($0.date, inSameDayAs: midnight) })
+    }
+
+    func testTravelKeepsOriginalAndCurrentCivilDayBudget() throws {
+        var utc = calendar
+        utc.timeZone = TimeZone(secondsFromGMT: 0)!
+        let before = calendar.date(from: DateComponents(year: 2026, month: 4, day: 2, hour: 21))!
+        let original = CompanionNoticePlan(morning: nil, bedtime: 22 * 60, quietStart: 0, quietEnd: 0)
+        let oldSlot = try XCTUnwrap(original.slots(hero: .gojo, now: before, calendar: calendar).first)
+        var ledger = CompanionNoticeLedger()
+        ledger.reserve(oldSlot, calendar: calendar)
+        let after = oldSlot.date.addingTimeInterval(60)
+        let relocated = CompanionNoticePlan(morning: 480, bedtime: 22 * 60, quietStart: 0, quietEnd: 0)
+        let proposed = relocated.slots(hero: .maomao, now: after, calendar: utc)
+        let accepted = ledger.reconcile(now: after, pending: [], slots: proposed, calendar: utc)
+        XCTAssertEqual(accepted.filter { utc.isDate($0.date, inSameDayAs: after) }.map(\.category), ["companion.greeting"])
+        // Back to the original zone, previous date and a different night key.
+        let early = CompanionNoticeSlot(id: "companion.bedtime.2026-04-01", category: "companion.bedtime", body: "", date: before)
+        XCTAssertTrue(ledger.reconcile(now: before.addingTimeInterval(-3600), pending: [], slots: [early], calendar: calendar).isEmpty)
+    }
+
     func testChannelTriggerConditionsAndWeights() throws {
         func row(_ id: String, weight: Int, channel: String = "notification", trigger: String = "scheduledGreeting",
                  requires: [String] = []) -> CharacterPack.Record {

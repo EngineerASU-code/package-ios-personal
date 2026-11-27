@@ -72,9 +72,9 @@ struct Provider: AppIntentTimelineProvider {
             let process = ProcessInfo.processInfo
             if state.mode != .paused && process.thermalState == .critical { state.mode = .safe }
             if state.mode == .normal && (process.isLowPowerModeEnabled || process.thermalState == .serious) { state.mode = .eco }
-            if !configuration.showsCalendar || state.mode == .safe || state.mode == .paused {
-                state.calendarSnapshot = CalendarSnapshot()
-            }
+            let calendarPrivacy: CalendarPrivacy = configuration.showsCalendar && state.mode != .safe && state.mode != .paused
+                ? .current : .off
+            state.calendarSnapshot = state.calendarSnapshot.filtered(by: calendarPrivacy)
             let now = Date()
             return Entry(date: now, state: state, settings: configuration,
                          display: DayTimeline.display(state, at: now, calendar: .current))

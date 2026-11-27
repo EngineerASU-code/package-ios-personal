@@ -9,6 +9,58 @@ struct CompanionNoticeSlot: Equatable {
     }
 }
 
+struct CompanionNoticeLedger: Codable {
+    struct Entry: Codable {
+        let date: Date
+        let localDay: Int
+        var spent: Bool
+    }
+    var entries: [String: Entry] = [:]
+    var latestCheck = Date.distantPast
+
+    static func day(_ date: Date, calendar: Calendar) -> Int {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        return (parts.year ?? 0) * 10000 + (parts.month ?? 0) * 100 + (parts.day ?? 0)
+    }
+
+    mutating func reconcile(now: Date, pending: Set<String>, slots: [CompanionNoticeSlot],
+                            calendar: Calendar) -> [CompanionNoticeSlot] {
+        latestCheck = max(latestCheck, now)
+        let earliest = latestCheck.addingTimeInterval(-7 * 86400)
+        entries = entries.filter { $0.value.date >= earliest }
+        for (id, entry) in entries where entry.date <= now || !pending.contains(id) {
+            entries[id]?.spent = true
+        }
+
+        var counts: [Int: Int] = [:]
+        var categories: [Int: Set<String>] = [:]
+        for (id, entry) in entries where entry.spent {
+            // Preserve the scheduled civil day and account for its instant in the current zone.
+            let days: Set<Int> = [entry.localDay, Self.day(entry.date, calendar: calendar)]
+            let category = id.hasPrefix("companion.greeting.") ? "companion.greeting" : "companion.bedtime"
+            for day in days {
+                counts[day, default: 0] += 1
+                categories[day, default: []].insert(category)
+            }
+        }
+        // Beyond retained history, suppress replay after severe clock rollback. The margin
+        // covers a civil day plus the largest difference between two civil time zones.
+        guard now >= earliest.addingTimeInterval(3 * 86400) else { return [] }
+        return slots.filter { slot in
+            let day = Self.day(slot.date, calendar: calendar)
+            guard entries[slot.id]?.spent != true,
+                  counts[day, default: 0] < 2, !categories[day, default: []].contains(slot.category) else { return false }
+            counts[day, default: 0] += 1
+            categories[day, default: []].insert(slot.category)
+            return true
+        }
+    }
+
+    mutating func reserve(_ slot: CompanionNoticeSlot, calendar: Calendar) {
+        entries[slot.id] = Entry(date: slot.date, localDay: Self.day(slot.date, calendar: calendar), spent: false)
+    }
+}
+
 struct CompanionNoticePlan {
     var morning: Int? // Minutes since local midnight; nil means opted out.
     var bedtime: Int?

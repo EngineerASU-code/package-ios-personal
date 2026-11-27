@@ -73,7 +73,6 @@ struct Home: View {
     func refreshSchedules() {
         Task {
             _ = await ReminderNotifications.shared.reconcile()
-            await CalendarController.shared.refresh()
         }
     }
     func refresh() {

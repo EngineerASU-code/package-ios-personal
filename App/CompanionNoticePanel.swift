@@ -37,15 +37,28 @@ private struct NoticePreferences: Equatable {
         let slots = permitted && (mode == .normal || mode == .eco) ? plan.slots(hero: hero, now: now, calendar: calendar) : []
         let pending = await center.pendingNotificationRequests().filter { CompanionNoticeSlot.owns($0.identifier) }
         let defaults = UserDefaults.standard
-        let ledgerKey = "companion.notice.appliedDates"
-        // Past scheduled slots may already have fired, even after Notification Center was cleared.
-        var ledger = (defaults.dictionary(forKey: ledgerKey) as? [String: Date] ?? [:])
-            .filter { $0.value > now.addingTimeInterval(-7 * 86400) }
-        let desired = slots.filter { (ledger[$0.id] ?? .distantFuture) > now }
+        let ledgerKey = "companion.notice.budget.v2"
+        var ledger = CompanionNoticeLedger()
+        if let data = defaults.data(forKey: ledgerKey) {
+            guard let saved = try? PropertyListDecoder().decode(CompanionNoticeLedger.self, from: data) else {
+                status = "Не удалось прочитать историю расписания."
+                return
+            }
+            ledger = saved
+        } else {
+            let previous = defaults.dictionary(forKey: "companion.notice.appliedDates") as? [String: Date] ?? [:]
+            for (id, date) in previous {
+                ledger.entries[id] = .init(date: date, localDay: CompanionNoticeLedger.day(date, calendar: calendar), spent: false)
+            }
+        }
+        func persist() throws {
+            defaults.set(try PropertyListEncoder().encode(ledger), forKey: ledgerKey)
+        }
+        let desired = ledger.reconcile(now: now, pending: Set(pending.map(\.identifier)), slots: slots, calendar: calendar)
         let ids = Set(desired.map(\.id))
         let stale = pending.map(\.identifier).filter { !ids.contains($0) }
         center.removePendingNotificationRequests(withIdentifiers: stale)
-        ledger = ledger.filter { $0.value <= now || ids.contains($0.key) }
+        ledger.entries = ledger.entries.filter { $0.value.spent || ids.contains($0.key) }
         let title = "Мой Компаньон · \(hero.name)"
         func matches(_ request: UNNotificationRequest, _ slot: CompanionNoticeSlot) -> Bool {
             request.identifier == slot.id && request.content.title == title && request.content.body == slot.body &&
@@ -53,7 +66,11 @@ private struct NoticePreferences: Equatable {
                 (request.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() == slot.date
         }
         do {
+            try persist()
             for slot in desired {
+                let previous = ledger.entries[slot.id]
+                ledger.reserve(slot, calendar: calendar)
+                try persist()
                 if !pending.contains(where: { matches($0, slot) }) {
                     let content = UNMutableNotificationContent()
                     content.title = title
@@ -62,9 +79,14 @@ private struct NoticePreferences: Equatable {
                     var parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: slot.date)
                     parts.timeZone = calendar.timeZone
                     let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
-                    try await center.add(UNNotificationRequest(identifier: slot.id, content: content, trigger: trigger))
+                    do {
+                        try await center.add(UNNotificationRequest(identifier: slot.id, content: content, trigger: trigger))
+                    } catch {
+                        ledger.entries[slot.id] = previous
+                        try persist()
+                        throw error
+                    }
                 }
-                ledger[slot.id] = slot.date
             }
             let applied = await center.pendingNotificationRequests().filter { CompanionNoticeSlot.owns($0.identifier) }
             let verified = applied.count == desired.count && desired.allSatisfy { slot in applied.contains { matches($0, slot) } }
@@ -74,7 +96,6 @@ private struct NoticePreferences: Equatable {
             else if mode == .safe || mode == .paused { status = "В этом режиме личные уведомления приостановлены." }
             else { status = "Запланировано на ближайшие три дня: \(applied.count)." }
         } catch { status = "Не удалось обновить расписание. Повторим при следующем открытии." }
-        defaults.set(ledger, forKey: ledgerKey)
     }
 }
 
