@@ -1,0 +1,40 @@
+name: Stage 5 widget simulator
+on:
+  push:
+    branches: [ci/ios-widget-stage5]
+permissions:
+  contents: read
+jobs:
+  widgets:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate model and content
+        run: |
+          swift test
+          python3 Scripts/validate_content.py
+      - name: Prepare simulator and UI tests
+        run: |
+          set -eu
+          mkdir -p evidence
+          xcodebuild -version | tee evidence/xcode.txt
+          xcrun simctl list devices available -j > evidence/devices.json
+          device=$(python3 -c 'import json; d=json.load(open("evidence/devices.json"))["devices"]; print(next(v["udid"] for k in sorted(d,reverse=True) if ".iOS-" in k for v in d[k] if v["name"].startswith("iPhone")))')
+          echo "DEVICE=$device" >> "$GITHUB_ENV"
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          gem list -i xcodeproj || gem install xcodeproj --user-install --no-document
+          ruby Scripts/stage5/prepare.rb
+      - name: Exercise installed widget on Home Screen
+        run: |
+          xcrun simctl io "$DEVICE" recordVideo evidence/widget.mp4 &
+          recorder=$!
+          trap 'kill -INT "$recorder" 2>/dev/null || true; wait "$recorder" || true' EXIT
+          xcodebuild test -project MyCompanion.xcodeproj -scheme Stage5 -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -resultBundlePath evidence/Widget.xcresult
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: widget-simulator-evidence
+          path: evidence/
+          retention-days: 7

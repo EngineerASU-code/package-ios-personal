@@ -89,4 +89,5 @@ struct Contact: Codable, Equatable {
     let hero: Hero
     let date: Date
     let response: String
+    var portalOnRight: Bool? = nil
 }

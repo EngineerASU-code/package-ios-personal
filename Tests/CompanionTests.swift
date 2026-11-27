@@ -11,6 +11,24 @@ private struct SeededGenerator: RandomNumberGenerator {
 }
 
 final class CompanionTests: XCTestCase {
+    func testPortalSideSurvivesReloadAndIsIndependentPerHero() throws {
+        var state = Companion()
+        for hero in [Hero.jinwoo, .maomao] {
+            state.hero = hero
+            XCTAssertNil(state.contact?.portalOnRight)
+            state.react()
+            XCTAssertEqual(state.contact?.portalOnRight, true)
+        }
+        state = try JSONDecoder().decode(Companion.self, from: JSONEncoder().encode(state))
+        state.react()
+        XCTAssertEqual(state.contact?.portalOnRight, false)
+        state.hero = .jinwoo
+        XCTAssertEqual(state.contact?.portalOnRight, true)
+        state.mode = .safe
+        state.react()
+        XCTAssertEqual(state.contact?.portalOnRight, true)
+    }
+
     func testRecentLinesExcludedForEveryHero() {
         for hero in Hero.allCases {
             var state = Companion()

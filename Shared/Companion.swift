@@ -170,6 +170,10 @@ struct Companion: Codable, Equatable {
 
     mutating func react(at date: Date = Date(), calendar: Calendar = .current) {
         guard mode == .normal || mode == .eco else { return }
+        let nextSide = !(contact?.portalOnRight ?? false)
+        defer {
+            if hero == .jinwoo || hero == .maomao { contact?.portalOnRight = nextSide }
+        }
         if greetIfNeeded(at: date, calendar: calendar) { return }
         let period = DayPeriod(hour: calendar.component(.hour, from: date))
         if period == .night || period == .lateNight {

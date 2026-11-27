@@ -109,6 +109,18 @@ struct WidgetScene: View {
     private var line: Reaction { entry.display ?? entry.state.reaction }
     private var symbol: String { entry.state.hero.sceneSymbol }
     private var speech: String { entry.settings.showsSpeech ? line.text : "" }
+    private var animates: Bool {
+        entry.available && !reduceMotion && entry.state.mode == .normal
+    }
+
+    private var showsPortal: Bool {
+        animates && (family == .systemMedium || family == .systemLarge)
+            && (entry.state.hero == .jinwoo || entry.state.hero == .maomao)
+            && entry.state.hero.pack != nil
+    }
+
+    private var portalOnRight: Bool { entry.state.contact?.portalOnRight ?? false }
+
     @ViewBuilder var scene: some View {
         switch family {
         case .accessoryCircular:
@@ -122,13 +134,29 @@ struct WidgetScene: View {
             }
         default:
             VStack(alignment: .leading, spacing: family == .systemSmall ? 4 : 10) {
-                Label(entry.state.hero.name, systemImage: symbol).font(.headline)
+                if showsPortal {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            Ellipse().strokeBorder(.secondary, lineWidth: 2)
+                            Image(systemName: symbol)
+                                .id(portalOnRight)
+                                .transition(.opacity)
+                        }
+                        .frame(width: 26, height: 30)
+                        .frame(width: 62, alignment: portalOnRight ? .trailing : .leading)
+                        .animation(.easeInOut(duration: 0.35), value: portalOnRight)
+                        .accessibilityHidden(true)
+                        Text(entry.state.hero.name).font(.headline)
+                    }
+                } else {
+                    Label(entry.state.hero.name, systemImage: symbol).font(.headline)
+                }
                 if family != .systemSmall || speech.isEmpty { Text(line.action).font(.caption) }
                 if !speech.isEmpty {
                     Text(speech).font(.callout).padding(6)
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
                         .lineLimit(family == .systemSmall ? 3 : 5)
-                        .contentTransition(.opacity)
+                        .contentTransition(animates ? .opacity : .identity)
                 }
                 if family == .systemLarge && entry.settings.showsCount {
                     let count = entry.state.unlocks.filter { $0.id.hasPrefix(entry.state.hero.rawValue + "_") }.count
@@ -139,14 +167,21 @@ struct WidgetScene: View {
     }
     var body: some View {
         Group {
-            if !entry.available { Text("Откройте Мой Компаньон") }
+            if !entry.available {
+                if family == .accessoryCircular {
+                    Image(systemName: "moon.stars").accessibilityLabel("Откройте Мой Компаньон")
+                } else {
+                    Label("Откройте Мой Компаньон", systemImage: "moon.stars")
+                }
+            }
             else if family == .accessoryInline || entry.state.mode == .safe || entry.state.mode == .paused { scene }
             else {
                 Button(intent: React(hero: entry.state.hero, follows: entry.settings.selection == .followPrimary)) { scene }
                     .buttonStyle(.plain).accessibilityHint("Новая реакция персонажа")
             }
-        }.animation(!reduceMotion && entry.state.mode == .normal ? .easeOut(duration: 0.2) : nil, value: line.id)
-        .containerBackground(for: .widget) { entry.state.hero.sceneColor.opacity(0.18) }
+        }.animation(animates ? .easeOut(duration: 0.2) : nil, value: line.id)
+        .transaction { if !animates { $0.disablesAnimations = true; $0.animation = nil } }
+        .containerBackground(for: .widget) { (entry.available ? entry.state.hero.sceneColor : Color.gray).opacity(0.18) }
     }
 }
 
