@@ -10,6 +10,7 @@ struct Home: View {
     @Environment(\.scenePhase) private var phase
     @State private var state = Companion()
     @State private var message = ""
+    @State private var changingReminder = false
     private let notice = "mycompanion.preview"
     var body: some View {
         NavigationStack {
@@ -42,7 +43,9 @@ struct Home: View {
                         ForEach(CompanionMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
                     Button("Напомнить через минуту") { Task { await schedule() } }
-                    Button("Отменить напоминание") { cancel(); message = "Напоминание отменено" }
+                        .disabled(changingReminder)
+                    Button("Отменить напоминание") { Task { await cancel() } }
+                        .disabled(changingReminder)
                     DisclosureGroup("Как добавить виджет") {
                         Text("Удерживайте свободное место на экране «Домой», откройте галерею виджетов и найдите «Мой Компаньон». После добавления удерживайте виджет, чтобы выбрать героя.")
                     }
@@ -71,8 +74,21 @@ struct Home: View {
             message = ""
         } catch { message = "Не удалось сохранить изменение" }
     }
-    func cancel() { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [notice]) }
+    @MainActor func cancel() async {
+        guard !changingReminder else { return }
+        changingReminder = true
+        defer { changingReminder = false }
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [notice])
+        let pending = await center.pendingNotificationRequests()
+        message = pending.contains { $0.identifier == notice }
+            ? "Не удалось отменить напоминание" : "Напоминание отменено"
+    }
+
     @MainActor func schedule() async {
+        guard !changingReminder else { return }
+        changingReminder = true
+        defer { changingReminder = false }
         let center = UNUserNotificationCenter.current()
         do {
             guard try await center.requestAuthorization(options: [.alert]) else { message = "Уведомления выключены"; return }
@@ -80,7 +96,9 @@ struct Home: View {
             content.title = "Мой Компаньон"
             content.body = "Время для небольшой передышки."
             try await center.add(UNNotificationRequest(identifier: notice, content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: false)))
-            message = "Напоминание запланировано"
+            let pending = await center.pendingNotificationRequests()
+            message = pending.filter { $0.identifier == notice }.count == 1
+                ? "Напоминание запланировано" : "Не удалось подтвердить напоминание"
         } catch { message = "Не удалось создать напоминание" }
     }
 }

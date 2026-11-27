@@ -1,0 +1,35 @@
+name: Stage 6 local reminders
+on:
+  push:
+    branches: [ci/ios-reminders-stage6]
+permissions:
+  contents: read
+jobs:
+  reminders:
+    runs-on: macos-15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [testDenied, testScheduleReplaceCancel]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare fresh iPhone
+        run: |
+          gem list -i xcodeproj || gem install xcodeproj --user-install --no-document
+          ruby Scripts/stage5/prepare.rb reminders
+          device=$(xcrun simctl list devices available -j | python3 -c 'import sys,json; print(next(d["udid"] for k,v in json.load(sys.stdin)["devices"].items() if k.endswith(".iOS-18-5") for d in v if d["name"] == "iPhone 16"))')
+          echo "DEVICE=$device" >> "$GITHUB_ENV"
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+      - name: Check notification permission and system queue
+        env:
+          TEST: ${{ matrix.test }}
+        run: |
+          xcodebuild test -project MyCompanion.xcodeproj -scheme Reminders -destination "platform=iOS Simulator,id=$DEVICE" ONLY_ACTIVE_ARCH=YES -parallel-testing-enabled NO -only-testing:"WidgetUITests/ReminderUITests/$TEST" -resultBundlePath Reminder.xcresult
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reminder-${{ matrix.test }}
+          path: Reminder.xcresult
+          retention-days: 7
