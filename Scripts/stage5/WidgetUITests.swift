@@ -55,21 +55,26 @@ final class WidgetUITests: XCTestCase {
         app.buttons["Обычный"].tap()
         XCUIDevice.shared.press(.home)
         XCTAssertTrue(reaction.waitForExistence(timeout: 20))
-        for (name, fraction) in [("small", 0.375), ("large", 0.875)] {
+        for name in ["small", "large"] {
             let current = home.icons["Мой Компаньон"].firstMatch
             XCTAssertTrue(current.waitForExistence(timeout: 10))
             current.press(forDuration: 1.3)
-            capture("size-menu-" + name)
-            print("SIZE MENU " + home.debugDescription)
-            let menu = home.buttons["Edit Home Screen"]
-            XCTAssertTrue(menu.waitForExistence(timeout: 5))
-            menu.coordinate(withNormalizedOffset: CGVector(dx: fraction, dy: 0.5))
-                .withOffset(CGVector(dx: 0, dy: -50)).tap()
+            let size = home.buttons[name.capitalized + " widget"]
+            XCTAssertTrue(size.waitForExistence(timeout: 5))
+            size.tap()
             Thread.sleep(forTimeInterval: 3)
             capture("home-" + name)
             XCTAssertTrue(current.exists)
             if name == "small" { XCTAssertLessThan(current.frame.width, 210) }
-            else { XCTAssertGreaterThan(current.frame.height, 300) }
+            else {
+                XCTAssertGreaterThan(current.frame.height, 300)
+                XCTAssertTrue(reaction.waitForExistence(timeout: 10))
+                let before = reaction.label
+                reaction.tap()
+                let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", before), object: reaction)
+                XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 15), .completed)
+                capture("large-after")
+            }
         }
     }
 
