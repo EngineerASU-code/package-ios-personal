@@ -1,0 +1,38 @@
+name: Appetize iPhone simulator build
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/ios-simulator-validation]
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check content and core logic
+        run: |
+          python3 Scripts/validate_content.py
+          swift test
+      - name: Build for the ARM iOS Simulator
+        run: |
+          xcodebuild build -project MyCompanion.xcodeproj -scheme MyCompanion \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build ARCHS=arm64
+      - name: Package the app and its widget
+        run: |
+          app=build/Build/Products/Debug-iphonesimulator/MyCompanion.app
+          test -d "$app/PlugIns/CompanionWidget.appex"
+          lipo -verify_arch arm64 "$app/MyCompanion"
+          ditto -c -k --keepParent "$app" MyCompanion-Appetize.zip
+          unzip -tq MyCompanion-Appetize.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyCompanion-Appetize
+          path: MyCompanion-Appetize.zip
+          if-no-files-found: error
+          retention-days: 7
