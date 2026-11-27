@@ -1,6 +1,7 @@
 name: Stage 6 local reminders
 on:
   push:
+    paths-ignore: ['Scripts/stage5/WidgetUITests.swift']
     branches: [ci/ios-reminders-stage6, ci/ios-ui-stage7]
 permissions:
   contents: read

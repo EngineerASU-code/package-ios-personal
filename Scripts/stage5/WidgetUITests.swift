@@ -40,6 +40,7 @@ final class WidgetUITests: XCTestCase {
         capture("medium-after")
         XCTAssertNotEqual(reaction.label, oldLabel)
         app.activate()
+        app.tabBars.buttons["Настройки"].tap()
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Обычный")).firstMatch.tap()
         app.buttons["Безопасный"].tap()
         capture("app-state")
@@ -51,6 +52,7 @@ final class WidgetUITests: XCTestCase {
 
         // Return to Normal, then verify the other two Home Screen sizes.
         app.activate()
+        app.tabBars.buttons["Настройки"].tap()
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Безопасный")).firstMatch.tap()
         app.buttons["Обычный"].tap()
         XCUIDevice.shared.press(.home)
