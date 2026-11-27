@@ -1,0 +1,86 @@
+import SwiftUI
+import WidgetKit
+import UserNotifications
+
+@main struct CompanionApp: App {
+    var body: some Scene { WindowGroup { Home() } }
+}
+
+struct Home: View {
+    @Environment(\.scenePhase) private var phase
+    @State private var state = Companion()
+    @State private var message = ""
+    private let notice = "mycompanion.preview"
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    Button { save { $0.react() } } label: { CompanionScene(state: state, display: DayTimeline.display(state, at: Date(), calendar: .current)) }
+                        .buttonStyle(.plain).disabled(state.mode == .safe || state.mode == .paused)
+                    Picker("Персонаж", selection: Binding(get: { state.hero }, set: { hero in
+                        save {
+                            $0.hero = hero
+                            _ = $0.greetIfNeeded(at: Date(), calendar: .current)
+                        }
+                    })) {
+                        ForEach(Hero.allCases, id: \.self) { Text($0.name).tag($0) }
+                    }
+                    if let pack = state.hero.pack {
+                        let finds = pack.finds.filter { find in state.unlocks.contains { $0.id == find.id } }
+                        if !finds.isEmpty {
+                            NavigationLink("Находки · \(finds.count)") {
+                                List(finds, id: \.id) { find in
+                                    VStack(alignment: .leading) {
+                                        Text(find.title).font(.headline)
+                                        Text(pack.byID[find.lineID]?.text ?? "")
+                                    }
+                                }.navigationTitle("Находки")
+                            }
+                        }
+                    }
+                    Picker("Режим", selection: Binding(get: { state.mode }, set: { mode in save { $0.mode = mode } })) {
+                        ForEach(CompanionMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    Button("Напомнить через минуту") { Task { await schedule() } }
+                    Button("Отменить напоминание") { cancel(); message = "Напоминание отменено" }
+                    DisclosureGroup("Как добавить виджет") {
+                        Text("Удерживайте свободное место на экране «Домой», откройте галерею виджетов и найдите «Мой Компаньон». После добавления удерживайте виджет, чтобы выбрать героя.")
+                    }
+                    Text(message).font(.footnote)
+                }.padding()
+            }.navigationTitle("Мой Компаньон")
+        }.onAppear { refresh() }.onChange(of: phase) { _, next in if next == .active { refresh() } }
+    }
+    func refresh() {
+        do {
+            let store = try Store.shared()
+            state = try store.read()
+            let date = Date()
+            let calendar = Calendar.current
+            var preview = state
+            if preview.greetIfNeeded(at: date, calendar: calendar) {
+                state = try store.update { _ = $0.greetIfNeeded(at: date, calendar: calendar) }
+                WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
+            }
+        } catch { message = "Общее хранилище недоступно" }
+    }
+    func save(_ change: (inout Companion) -> Void) {
+        do {
+            state = try Store.shared().update(change)
+            WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
+            message = ""
+        } catch { message = "Не удалось сохранить изменение" }
+    }
+    func cancel() { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [notice]) }
+    @MainActor func schedule() async {
+        let center = UNUserNotificationCenter.current()
+        do {
+            guard try await center.requestAuthorization(options: [.alert]) else { message = "Уведомления выключены"; return }
+            let content = UNMutableNotificationContent()
+            content.title = "Мой Компаньон"
+            content.body = "Время для небольшой передышки."
+            try await center.add(UNNotificationRequest(identifier: notice, content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: false)))
+            message = "Напоминание запланировано"
+        } catch { message = "Не удалось создать напоминание" }
+    }
+}
