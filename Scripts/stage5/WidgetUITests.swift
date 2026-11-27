@@ -1,12 +1,14 @@
 import XCTest
+import UIKit
 
 final class WidgetUITests: XCTestCase {
     let app = XCUIApplication(bundleIdentifier: "local.mycompanion")
     let home = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     func testMediumWidgetReactionAndSafeFallback() throws {
+        continueAfterFailure = false
         app.launch()
-        app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Сатору Годжо")).allElementsBoundByIndex.last?.tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Сатору Годжо")).allElementsBoundByIndex.last?.tap()
         let hero = app.buttons["Мао Мао"]
         XCTAssertTrue(hero.waitForExistence(timeout: 5))
         hero.tap()
@@ -23,7 +25,9 @@ final class WidgetUITests: XCTestCase {
         let search = home.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
-        search.typeText("Мой Компаньон")
+        UIPasteboard.general.string = "Мой Компаньон"
+        search.press(forDuration: 1)
+        if home.buttons["Paste"].waitForExistence(timeout: 2) { home.buttons["Paste"].tap() } else { search.typeText("Мой Компаньон") }
         let result = home.staticTexts["Мой Компаньон"].firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 10))
         result.tap()
@@ -32,7 +36,7 @@ final class WidgetUITests: XCTestCase {
         let done = home.buttons["Done"]
         if done.waitForExistence(timeout: 3) { done.tap() }
 
-        let reaction = home.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Мао Мао")).firstMatch
+        let reaction = home.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Мао Мао")).firstMatch
         XCTAssertTrue(reaction.waitForExistence(timeout: 15))
         capture("medium-before")
         let before = reaction.label
@@ -43,12 +47,12 @@ final class WidgetUITests: XCTestCase {
         capture("medium-after")
 
         app.activate()
-        app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Обычный")).firstMatch.tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Обычный")).firstMatch.tap()
         app.buttons["Безопасный"].tap()
         XCUIDevice.shared.press(.home)
         let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: reaction)
         XCTAssertEqual(XCTWaiter.wait(for: [disabled], timeout: 15), .completed)
-        XCTAssertTrue(home.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Мао Мао")).firstMatch.exists)
+        XCTAssertTrue(home.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Мао Мао")).firstMatch.exists)
         capture("safe-static")
     }
 
