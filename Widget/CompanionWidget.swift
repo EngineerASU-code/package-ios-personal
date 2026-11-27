@@ -152,17 +152,32 @@ struct WidgetScene: View {
             .contentTransition(animates ? .opacity : .identity)
     }
 
-    @ViewBuilder var scene: some View {
-        switch family {
+    @ViewBuilder func accessory(_ size: WidgetFamily) -> some View {
+        switch size {
         case .accessoryCircular:
-            Image(systemName: symbol).widgetAccentable().accessibilityLabel(entry.state.hero.name)
+            ZStack {
+                AccessoryWidgetBackground()
+                CompanionFigure(hero: entry.state.hero, emotion: line.emotion).padding(2)
+            }.accessibilityLabel(entry.state.hero.name)
         case .accessoryInline:
             Label(entry.state.hero.name, systemImage: symbol)
         case .accessoryRectangular:
-            VStack(alignment: .leading) {
+            HStack(spacing: 4) {
+                CompanionFigure(hero: entry.state.hero, emotion: line.emotion)
+                    .frame(width: 40, height: 46)
+                VStack(alignment: .leading, spacing: 2) {
                 Text(entry.state.hero.name).font(.headline)
                 Text(speech.isEmpty ? line.action : speech).lineLimit(2)
             }
+            }
+        default: EmptyView()
+        }
+    }
+
+    @ViewBuilder var scene: some View {
+        switch family {
+        case .accessoryCircular, .accessoryInline, .accessoryRectangular:
+            accessory(family)
         default:
             VStack(alignment: .leading, spacing: family == .systemSmall ? 4 : 10) {
                 if family == .systemSmall {

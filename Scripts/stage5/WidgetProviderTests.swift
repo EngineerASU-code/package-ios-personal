@@ -1,7 +1,34 @@
+import SwiftUI
+import WidgetKit
 import Foundation
 import XCTest
 
 final class WidgetProviderTests: XCTestCase {
+    @MainActor func testAccessoryLayoutsRenderOnSimulator() throws {
+        for hero in [Hero.jinwoo, .maomao] {
+            var state = Companion()
+            state.hero = hero
+            let scene = WidgetScene(entry: Entry(date: Date(), state: state, settings: Settings()))
+            for (family, name, width, height) in [
+                (WidgetFamily.accessoryCircular, "circle", 52, 52),
+                (.accessoryInline, "inline", 180, 26),
+                (.accessoryRectangular, "rectangle", 160, 62)
+            ] {
+                let content = scene.accessory(family)
+                    .frame(width: CGFloat(width), height: CGFloat(height))
+                    .foregroundStyle(.white).background(.black)
+                let renderer = ImageRenderer(content: content)
+                renderer.scale = 3
+                let image = try XCTUnwrap(renderer.uiImage)
+                XCTAssertEqual(image.cgImage?.width, width * 3)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = hero.rawValue + "-" + name
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
     func testConfigurationsShareModeAndKeepIndependentContacts() async throws {
         let store = try Store.shared()
         defer { try? FileManager.default.removeItem(at: store.url) }

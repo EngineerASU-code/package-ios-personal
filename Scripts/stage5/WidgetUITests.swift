@@ -6,10 +6,14 @@ final class WidgetUITests: XCTestCase {
     let home = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     func testMediumWidgetReactionAndSafeFallback() throws {
+        try exerciseHomeWidget(heroName: "Сон Джин Ву")
+    }
+
+    private func exerciseHomeWidget(heroName: String) throws {
         continueAfterFailure = false
         app.launch()
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Сатору Годжо")).allElementsBoundByIndex.last?.tap()
-        let hero = app.buttons["Мао Мао"]
+        let hero = app.buttons[heroName]
         XCTAssertTrue(hero.waitForExistence(timeout: 5))
         hero.tap()
         capture("app-state")
@@ -28,7 +32,7 @@ final class WidgetUITests: XCTestCase {
 
         // SpringBoard exposes third-party widgets as a single icon on some runtimes.
         let widget = home.icons.matching(NSPredicate(format: "label CONTAINS %@", "Мой Компаньон")).firstMatch
-        let reaction = home.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Мао Мао")).firstMatch
+        let reaction = home.buttons.matching(NSPredicate(format: "label CONTAINS %@", heroName)).firstMatch
         let target = reaction.waitForExistence(timeout: 8) ? reaction : widget
         capture("medium-before")
         print("HOME BEFORE " + home.debugDescription)
@@ -48,7 +52,7 @@ final class WidgetUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 4)
         capture("safe-static")
         XCTAssertFalse(reaction.exists)
-        XCTAssertTrue(home.staticTexts["Мао Мао"].firstMatch.exists)
+        XCTAssertTrue(home.staticTexts[heroName].firstMatch.exists)
 
         // Return to Normal, then verify the other two Home Screen sizes.
         app.activate()
