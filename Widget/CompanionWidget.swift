@@ -1,4 +1,5 @@
 import AppIntents
+import os
 import SwiftUI
 import WidgetKit
 
@@ -22,13 +23,34 @@ enum WidgetHero: String, AppEnum {
     ]
 }
 
+enum WidgetForm: String, AppEnum {
+    case chibi, portrait
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Форма героя"
+    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+        .chibi: "Чиби",
+        .portrait: "Портрет"
+    ]
+
+    var baseImageName: String { self == .portrait ? "portrait.png" : "chibi.png" }
+}
+
 struct Settings: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "Настройки компаньона"
     @Parameter(title: "Персонаж", default: .followPrimary) var selection: WidgetHero
+    @Parameter(title: "Форма героя", default: .chibi) var form: WidgetForm
     @Parameter(title: "Показывать реплики", default: true) var showsSpeech: Bool
     @Parameter(title: "Показывать срок задачи", default: true) var showsTask: Bool
     @Parameter(title: "Показывать число находок", default: false) var showsCount: Bool
     @Parameter(title: "Показывать календарь", default: true) var showsCalendar: Bool
+    @Parameter(title: "Скрывать названия событий", default: false) var hidesEventTitles: Bool
+
+    func calendarPrivacy(for mode: CompanionMode) -> CalendarPrivacy {
+        guard showsCalendar, mode != .safe, mode != .paused else { return .off }
+        let appPrivacy = CalendarPrivacy.current
+        if hidesEventTitles && appPrivacy == .titles { return .privateTitles }
+        return appPrivacy
+    }
 }
 
 private func widgetMode(for preference: CompanionMode, process: ProcessInfo = .processInfo) -> CompanionMode {
@@ -36,6 +58,8 @@ private func widgetMode(for preference: CompanionMode, process: ProcessInfo = .p
     if preference == .normal && (process.isLowPowerModeEnabled || process.thermalState == .serious) { return .eco }
     return preference
 }
+
+private let widgetPerformance = OSSignposter(subsystem: "local.mycompanion.widget", category: "Performance")
 
 struct React: AppIntent {
     static var title: LocalizedStringResource = "Поговорить"
@@ -46,18 +70,21 @@ struct React: AppIntent {
     init(hero: Hero, follows: Bool) { heroID = hero.rawValue; self.follows = follows }
 
     func perform() async throws -> some IntentResult {
+        let interval = widgetPerformance.beginInterval("React", id: widgetPerformance.makeSignpostID())
+        defer { widgetPerformance.endInterval("React", interval) }
         guard let target = Hero(rawValue: heroID) else { return .result() }
-        try Store.shared().update { state in
+        try Store.shared().updateIfPresent { state in
             let primary = state.hero
-            guard !follows || primary == target else { return }
+            guard !follows || primary == target else { return false }
             let preference = state.mode
             let effective = widgetMode(for: preference)
-            guard effective == .normal || effective == .eco else { return }
+            guard effective == .normal || effective == .eco else { return false }
             state.mode = effective
             state.hero = target
             state.react(source: .widgetIntent)
             state.hero = primary
             state.mode = preference
+            return true
         }
         return .result()
     }
@@ -70,31 +97,71 @@ struct Entry: TimelineEntry {
     var display: Reaction?
     var available = true
     var retryAfterCooling = false
+    var pack: CharacterPack? = nil
+    var artwork: [ArtworkRequest: UIImage] = [:]
+
+    func prepared(for family: WidgetFamily) async -> Self {
+        guard available else { return self }
+        var result = self
+        let hero = state.hero
+        result.pack = pack ?? hero.pack
+        let compact = [.accessoryCircular, .accessoryRectangular, .accessoryInline].contains(family)
+        let base = ArtworkRequest(hero: hero, file: settings.form.baseImageName, pixels: compact ? 160 : 512)
+        guard result.pack != nil, let baseImage = await ArtworkDecoder.shared.image(for: base) else {
+            return Entry(date: date, state: Companion(), settings: settings, available: false)
+        }
+        let line = display ?? state.reaction(using: result.pack)
+        result.display = line
+        guard family != .accessoryInline else { return result }
+        let figure = ArtworkRequest.figure(hero, portrait: settings.form == .portrait, emotion: line.emotion,
+                                           daytime: line.daytimePose, pixels: compact ? 160 : 512)
+        var requests: Set<ArtworkRequest> = [figure]
+        if !compact {
+            requests.insert(.backdrop(hero, date: date, mode: state.mode, schedule: state.daySchedule))
+            if state.mode == .normal && state.animationsEnabled && settings.form == .chibi && family != .systemSmall,
+               let descriptor = result.pack?.animations[family == .systemLarge ? .widgetLarge : .widgetMedium] {
+                let contactVisible = state.contact.map { $0.response == line.id } ?? false
+                let layeredRest = line.emotion == .neutral && (descriptor.id == .spirit || descriptor.id == .expression)
+                if contactVisible || descriptor.id == .portal || layeredRest {
+                    for file in descriptor.assets { requests.insert(ArtworkRequest(hero: hero, file: file)) }
+                }
+            }
+        }
+        result.artwork = await ArtworkDecoder.shared.images(for: requests)
+        result.artwork[base] = baseImage
+        return result
+    }
 }
 
 struct Provider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> Entry {
-        Entry(date: Date(), state: Companion(), settings: Settings())
+        Entry(date: Date(), state: Companion(), settings: Settings(), available: false)
     }
 
     func current(_ configuration: Settings, store: () throws -> Store = Store.shared,
                  effectiveMode: (CompanionMode) -> CompanionMode = { widgetMode(for: $0) },
-                 hasResources: (Hero) -> Bool = { hero in
-                     hero.pack != nil && UIImage(named: "Characters/" + hero.rawValue + "/chibi.png") != nil
-                 }) -> Entry {
+                 hasResources: ((Hero) -> Bool)? = nil) -> Entry {
         do {
             guard var state = try store().readIfPresent() else { throw StoreError.unavailable }
+            state.personalNoticeJournal = nil
+            state.calendarNoticeJournal = nil
             if let fixed = Hero(rawValue: configuration.selection.rawValue) { state.hero = fixed }
-            guard hasResources(state.hero) else { throw StoreError.unavailable }
+            let hero = state.hero
+            guard let pack = hero.pack, hasResources?(hero) != false else { throw StoreError.unavailable }
             let preference = state.mode
             state.mode = effectiveMode(preference)
-            let calendarPrivacy: CalendarPrivacy = configuration.showsCalendar && state.mode != .safe && state.mode != .paused
-                ? .current : .off
-            state.calendarSnapshot = state.calendarSnapshot.filtered(by: calendarPrivacy)
             let now = Date()
+            state.calendarSnapshot = state.calendarSnapshot.isFresh(at: now)
+                ? state.calendarSnapshot.filtered(by: configuration.calendarPrivacy(for: state.mode)) : CalendarSnapshot()
+            if configuration.showsTask {
+                state.reminders.removeAll { $0.completedAt != nil || $0.target == nil }
+                for index in state.reminders.indices { state.reminders[index].title = "" }
+            } else {
+                state.reminders.removeAll()
+            }
             return Entry(date: now, state: state, settings: configuration,
-                         display: DayTimeline.display(state, at: now, calendar: .current, showsTask: configuration.showsTask, channel: "widget"),
-                         retryAfterCooling: state.mode == .safe && (preference == .normal || preference == .eco))
+                         display: DayTimeline.display(state, at: now, calendar: .current, showsTask: configuration.showsTask, channel: "widget", using: pack),
+                         retryAfterCooling: state.mode == .safe && (preference == .normal || preference == .eco), pack: pack)
         } catch {
             return Entry(date: Date(), state: Companion(), settings: configuration, available: false)
         }
@@ -104,13 +171,15 @@ struct Provider: AppIntentTimelineProvider {
         if context.isPreview {
             var sample = Companion()
             sample.hero = Hero(rawValue: configuration.selection.rawValue) ?? .gojo
-            return Entry(date: Date(), state: sample, settings: configuration)
+            return await Entry(date: Date(), state: sample, settings: configuration).prepared(for: context.family)
         }
-        return current(configuration)
+        return await current(configuration).prepared(for: context.family)
     }
 
     func timeline(for configuration: Settings, in context: Context) async -> Timeline<Entry> {
-        let first = current(configuration)
+        let interval = widgetPerformance.beginInterval("Timeline", id: widgetPerformance.makeSignpostID())
+        defer { widgetPerformance.endInterval("Timeline", interval) }
+        let first = await current(configuration).prepared(for: context.family)
         guard first.available, first.state.mode == .normal || first.state.mode == .eco else {
             // WidgetKit can re-evaluate transient thermal restrictions after a quiet Eco interval.
             let policy: TimelineReloadPolicy = first.retryAfterCooling ? .after(first.date.addingTimeInterval(2 * 3600)) : .never
@@ -129,11 +198,57 @@ struct Provider: AppIntentTimelineProvider {
             }
         }
         let dates = scheduled.sorted()
-        let entries = dates.map { date in
-            Entry(date: date, state: first.state, settings: configuration,
-                  display: DayTimeline.display(first.state, at: date, calendar: calendar, showsTask: configuration.showsTask, channel: "widget"))
+        var entries = [first]
+        for date in dates where date > first.date {
+            var state = first.state
+            if !snapshot.isFresh(at: date) { state.calendarSnapshot = CalendarSnapshot() }
+            let entry = Entry(date: date, state: state, settings: configuration,
+                              display: DayTimeline.display(state, at: date, calendar: calendar, showsTask: configuration.showsTask, channel: "widget", using: first.pack),
+                              pack: first.pack)
+            entries.append(await entry.prepared(for: context.family))
         }
         return Timeline(entries: entries, policy: .after(first.date.addingTimeInterval(12 * 3600)))
+    }
+}
+
+struct WidgetAccessory: View {
+    let entry: Entry
+    let size: WidgetFamily
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var line: Reaction { entry.display ?? Reaction("idle", "", "Отдыхает") }
+    private var speech: String { entry.settings.showsSpeech ? line.text : "" }
+    private var symbol: String { entry.pack?.theme.symbol ?? "sparkles" }
+    private var characterFigure: CompanionFigure {
+        CompanionFigure(hero: entry.state.hero, portrait: entry.settings.form == .portrait,
+                        emotion: line.emotion, daytimePose: line.daytimePose, pixels: 160)
+    }
+
+    @ViewBuilder var body: some View {
+        switch size {
+        case .accessoryCircular:
+            ZStack {
+                AccessoryWidgetBackground()
+                characterFigure
+                    .contrast(1.18).padding(1)
+            }.accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(entry.state.hero.name))
+        case .accessoryInline:
+            Label(entry.state.hero.name, systemImage: symbol)
+        case .accessoryRectangular:
+            HStack(spacing: 4) {
+                if !typeSize.isAccessibilitySize {
+                    characterFigure
+                        .frame(width: 40, height: 46)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.state.hero.name).font(.headline).lineLimit(1)
+                    Text(speech.isEmpty ? line.action : (entry.pack?.byID[line.id]?.shortText ?? speech))
+                        .font(.caption).lineLimit(2)
+                        .accessibilityLabel(Text(speech.isEmpty ? line.action : speech))
+                }
+            }
+        default: EmptyView()
+        }
     }
 }
 
@@ -142,69 +257,40 @@ struct WidgetScene: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     let entry: Entry
-    private var line: Reaction { entry.display ?? entry.state.reaction }
-    private var symbol: String { entry.state.hero.sceneSymbol }
+    private var line: Reaction { entry.display ?? Reaction("idle", "", "Отдыхает") }
     private var speech: String { entry.settings.showsSpeech ? line.text : "" }
     private var animates: Bool {
-        entry.available && !reduceMotion && entry.state.mode == .normal
+        entry.available && entry.state.animationsEnabled && !reduceMotion && entry.state.mode == .normal
     }
 
-    private var showsPortal: Bool {
-        animates && (family == .systemMedium || family == .systemLarge)
-            && entry.state.hero == .maomao
-            && entry.state.hero.pack != nil
+    private var characterFigure: CompanionFigure {
+        CompanionFigure(hero: entry.state.hero, portrait: entry.settings.form == .portrait,
+                               emotion: line.emotion, daytimePose: line.daytimePose)
     }
 
-    private var portalOnRight: Bool { entry.state.contact?.portalOnRight ?? false }
+    private var descriptor: CharacterPack.AnimationDescriptor? {
+        guard animates, !typeSize.isAccessibilitySize, entry.settings.form == .chibi else { return nil }
+        switch family {
+        case .systemMedium: return entry.pack?.animations[.widgetMedium]
+        case .systemLarge: return entry.pack?.animations[.widgetLarge]
+        default: return nil
+        }
+    }
 
     @ViewBuilder private var homeFigure: some View {
-        let model = CompanionFigure(hero: entry.state.hero, emotion: line.emotion, daytimePose: line.daytimePose)
-        if animates && entry.state.hero == .jinwoo && (family == .systemMedium || family == .systemLarge) {
-            ShadowSummon(figure: model, contact: entry.state.contact.flatMap { $0.response == line.id ? $0.date : nil }, animate: animates)
-        } else if entry.state.hero == .maomao {
-            model.aspectRatio(1, contentMode: .fit)
-                .scaleEffect(family == .systemSmall ? 1.42 : 1, anchor: .top)
-                .clipped()
-        } else if animates && entry.state.hero == .toji && (family == .systemMedium || family == .systemLarge) {
-            ZStack {
-                if let contact = entry.state.contact, contact.response == line.id {
-                    TojiSpirit(progress: 1)
-                        .id(contact.date)
-                        .transition(.asymmetric(insertion: .modifier(
-                            active: TojiSpiritPhase(progress: 0), identity: TojiSpiritPhase(progress: 1)),
-                            removal: .identity))
-                } else if line.emotion == .neutral {
-                    TojiSpirit(progress: 0)
-                } else {
-                    model
-                }
-            }
-            .scaleEffect(family == .systemMedium ? 1.14 : 1)
-            .animation(animates ? .linear(duration: 1.38) : nil, value: entry.state.contact?.date)
-        } else if animates && entry.state.hero == .sukuna && (family == .systemMedium || family == .systemLarge) {
-            ZStack {
-                if let contact = entry.state.contact, contact.response == line.id {
-                    Color.clear.modifier(SukunaExpression(progress: 1))
-                        .aspectRatio(1, contentMode: .fit)
-                        .id(contact.date)
-                        .transition(.asymmetric(insertion: .modifier(
-                            active: SukunaExpression(progress: 0), identity: SukunaExpression(progress: 1)),
-                            removal: .identity))
-                } else if line.emotion == .neutral {
-                    Color.clear.modifier(SukunaExpression(progress: 0))
-                } else {
-                    model
-                }
-            }
-            .scaleEffect(family == .systemMedium ? 1.12 : 1)
-            .animation(animates ? .linear(duration: 0.9) : nil, value: entry.state.contact?.date)
+        if entry.settings.form == .chibi && entry.state.hero == .maomao && family == .systemSmall {
+            characterFigure.aspectRatio(1, contentMode: .fit).scaleEffect(1.42, anchor: .top).clipped()
         } else {
-            model
+            CharacterActionFigure(figure: characterFigure, descriptor: descriptor,
+                                  contactDate: entry.state.contact.flatMap { $0.response == line.id ? $0.date : nil },
+                                  emotion: line.emotion)
+                .scaleEffect(family == .systemMedium && descriptor?.id == .spirit ? 1.14 :
+                             (family == .systemMedium && descriptor?.id == .expression ? 1.12 : 1))
         }
     }
 
     private var figure: some View {
-        let summon = entry.state.hero == .jinwoo && entry.state.mode == .normal
+        let summon = descriptor?.id == .summon
         return homeFigure
             .frame(maxWidth: family == .systemSmall ? 110 : (summon ? 190 : (family == .systemLarge ? 172 : 124)),
                    maxHeight: family == .systemSmall ? 90 : (family == .systemLarge ? 190 : 126))
@@ -219,33 +305,6 @@ struct WidgetScene: View {
             .contentTransition(animates ? .opacity : .identity)
     }
 
-    @ViewBuilder func accessory(_ size: WidgetFamily) -> some View {
-        switch size {
-        case .accessoryCircular:
-            ZStack {
-                AccessoryWidgetBackground()
-                CompanionFigure(hero: entry.state.hero, emotion: line.emotion, daytimePose: line.daytimePose)
-                    .contrast(1.18).padding(1)
-            }.accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(entry.state.hero.name))
-        case .accessoryInline:
-            Label(entry.state.hero.name, systemImage: symbol)
-        case .accessoryRectangular:
-            HStack(spacing: 4) {
-                if !typeSize.isAccessibilitySize {
-                    CompanionFigure(hero: entry.state.hero, emotion: line.emotion, daytimePose: line.daytimePose)
-                        .frame(width: 40, height: 46)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.state.hero.name).font(.headline).lineLimit(1)
-                    Text(speech.isEmpty ? line.action : (entry.state.hero.pack?.byID[line.id]?.shortText ?? speech))
-                        .font(.caption).lineLimit(2)
-                }
-            }
-        default: EmptyView()
-        }
-    }
-
     private var smallFeaturedHero: some View {
         GeometryReader { bounds in
             ZStack(alignment: .bottomLeading) {
@@ -257,7 +316,7 @@ struct WidgetScene: View {
                         .foregroundStyle(.white).padding(.horizontal, 4)
                         .background(.black.opacity(0.78), in: Capsule())
                     if !speech.isEmpty {
-                        Text(entry.state.hero.pack?.byID[line.id]?.shortText ?? speech)
+                        Text(entry.pack?.byID[line.id]?.shortText ?? speech)
                             .font(.caption).foregroundStyle(.black).lineLimit(3)
                             .padding(4).background(.white, in: RoundedRectangle(cornerRadius: 6))
                             .accessibilityLabel(Text(speech))
@@ -270,7 +329,7 @@ struct WidgetScene: View {
     @ViewBuilder var scene: some View {
         switch family {
         case .accessoryCircular, .accessoryInline, .accessoryRectangular:
-            accessory(family)
+            WidgetAccessory(entry: entry, size: family)
         case .systemSmall:
             smallFeaturedHero
         default:
@@ -286,47 +345,17 @@ struct WidgetScene: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(entry.state.hero.name).font(.headline).lineLimit(1).widgetCaptionBackground()
                         if !speech.isEmpty {
-                            Text(entry.state.hero.pack?.byID[line.id]?.shortText ?? speech)
+                            Text(entry.pack?.byID[line.id]?.shortText ?? speech)
                                 .font(.caption).lineLimit(2).padding(4)
                                 .foregroundStyle(.black).background(.white, in: RoundedRectangle(cornerRadius: 6))
                                 .accessibilityLabel(Text(speech))
                         }
                     }
-                } else if showsPortal {
-                    CompanionPortalScene(hero: entry.state.hero, right: portalOnRight, figure: figure, caption: caption)
+                } else if let descriptor, descriptor.id == .portal {
+                    CompanionPortalScene(hero: entry.state.hero, right: entry.state.contact?.portalOnRight ?? false,
+                                         duration: descriptor.duration, figure: figure, caption: caption)
                 } else {
-                    HStack(spacing: 8) {
-                        if animates, entry.state.hero == .gojo,
-                           let contact = entry.state.contact, contact.response == line.id,
-                           line.emotion != .sleepy {
-                            GojoGaze(progress: 1)
-                                .id(contact.date)
-                                .transition(.asymmetric(insertion: .modifier(
-                                    active: GojoGazePhase(progress: 0),
-                                    identity: GojoGazePhase(progress: 1)), removal: .identity))
-                                .frame(maxWidth: family == .systemLarge ? 172 : 124,
-                                       maxHeight: family == .systemLarge ? 190 : 126)
-                                .animation(animates ? .linear(duration: 1.4) : nil, value: contact.date)
-                        } else if animates && entry.state.hero == .jinshi {
-                            figure.overlay {
-                                ZStack {
-                                    if let contact = entry.state.contact, contact.response == line.id {
-                                        JinshiFan(opening: 1)
-                                            .id(contact.date)
-                                            .transition(.asymmetric(insertion: .modifier(
-                                                active: FoldedFan(progress: 0), identity: FoldedFan(progress: 1)),
-                                                removal: .identity))
-                                    }
-                                }
-                                .animation(animates ? .easeInOut(duration: 0.95) : nil, value: entry.state.contact?.date)
-                                .accessibilityHidden(true)
-                            }
-                        } else {
-                            figure
-                        }
-                        caption
-                    }.animation(entry.state.hero == .gojo && animates ? .linear(duration: 1.4) : nil,
-                                value: entry.state.hero == .gojo ? entry.state.contact?.date : nil)
+                    HStack(spacing: 8) { figure; caption }
                 }
                 if family == .systemMedium || family == .systemLarge {
                     ForEach(entry.state.calendarSnapshot.upcoming(at: entry.date).prefix(family == .systemLarge ? 3 : 1)) { event in
@@ -391,141 +420,11 @@ struct WidgetScene: View {
         .transaction { if !animates { $0.disablesAnimations = true; $0.animation = nil } }
         .containerBackground(for: .widget) {
             if entry.available && [.systemSmall, .systemMedium, .systemLarge].contains(family) {
-                HeroBackdrop(hero: entry.state.hero, date: entry.date, mode: entry.state.mode)
+                HeroBackdrop(hero: entry.state.hero, date: entry.date, mode: entry.state.mode,
+                             daySchedule: entry.state.daySchedule)
             } else { Color.clear }
-        }
-    }
-}
-
-private struct FoldedFan: AnimatableModifier {
-    var progress: Double
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    func body(content: Content) -> some View {
-        JinshiFan(opening: progress)
-    }
-}
-
-private struct JinshiFan: View {
-    let opening: Double
-
-    var body: some View {
-        Canvas { context, size in
-            let side = min(size.width, size.height)
-            let pivot = CGPoint(x: size.width / 2 + side * 0.10, y: size.height / 2 + side * 0.17)
-            context.translateBy(x: pivot.x, y: pivot.y)
-            context.rotate(by: .degrees(-18 + 10 * opening))
-            let radius = side * 0.31
-            let halfAngle = 4 + 59 * opening
-            let gold = Color(red: 0.96, green: 0.79, blue: 0.51)
-            for leaf in 0..<10 {
-                let a = (-90 - halfAngle + Double(leaf) * halfAngle / 5) * .pi / 180
-                let b = a + halfAngle * .pi / 900
-                let outer = CGPoint(x: radius * cos(a), y: radius * sin(a))
-                let next = CGPoint(x: radius * cos(b), y: radius * sin(b))
-                var panel = Path()
-                panel.move(to: .zero)
-                panel.addLine(to: outer)
-                panel.addLine(to: next)
-                panel.closeSubpath()
-                context.fill(panel, with: .color(leaf.isMultiple(of: 2)
-                    ? Color(red: 0.52, green: 0.28, blue: 0.46)
-                    : Color(red: 0.71, green: 0.46, blue: 0.60)))
-                context.stroke(panel, with: .color(gold), lineWidth: side * 0.005)
-            }
-            context.fill(Path(ellipseIn: CGRect(x: -2, y: -2, width: 4, height: 4)), with: .color(gold))
-        }
-    }
-}
-
-private struct SukunaExpression: AnimatableModifier {
-    var progress: Double
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    func body(content: Content) -> some View {
-        let chin = blend(from: 0.04, to: 0.43)
-        let smile = blend(from: 0.58, to: 1)
-        return ZStack {
-            pose("tap-calm").opacity(1 - chin)
-            pose("tap-chin").opacity(chin * (1 - smile))
-            pose("tap-smirk").opacity(smile)
-        }.accessibilityHidden(true)
-    }
-
-    private func blend(from start: Double, to end: Double) -> Double {
-        let t = min(1, max(0, (progress - start) / (end - start)))
-        return t * t * (3 - 2 * t)
-    }
-
-    private func pose(_ name: String) -> some View {
-        Image("Characters/ryomen_sukuna/" + name + ".png").resizable().scaledToFit()
-    }
-}
-
-private struct TojiSpiritPhase: AnimatableModifier {
-    var progress: Double
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
-    }
-    func body(content: Content) -> some View { TojiSpirit(progress: progress) }
-}
-
-private struct TojiSpirit: View {
-    let progress: Double
-
-    private func blend(from start: Double, to end: Double) -> Double {
-        let t = min(1, max(0, (progress * 980 - start) / (end - start)))
-        return t * t * (3 - 2 * t)
-    }
-
-    var body: some View {
-        let reach = blend(from: 80, to: 310)
-        let lower = blend(from: 700, to: 980)
-        ZStack {
-            pose("spirit-idle").opacity(1 - reach)
-            pose("spirit-draw").opacity(reach * (1 - lower))
-            pose("spirit-blade").opacity(lower)
-        }.accessibilityHidden(true)
-    }
-
-    private func pose(_ name: String) -> some View {
-        Image("Characters/toji_fushiguro/" + name + ".png").resizable().scaledToFit()
-    }
-}
-
-private struct GojoGazePhase: AnimatableModifier {
-    var progress: Double
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
-    }
-    func body(content: Content) -> some View { GojoGaze(progress: progress) }
-}
-
-private struct GojoGaze: View {
-    let progress: Double
-
-    private func layer(_ name: String, from start: Double, to end: Double) -> some View {
-        let amount = min(1, max(0, (progress - start) / (end - start)))
-        return Image("Characters/satoru_gojo/" + name + ".png")
-            .resizable().scaledToFit().opacity(amount * amount * (3 - 2 * amount))
-    }
-
-    var body: some View {
-        ZStack {
-            // Complementary alpha on the moving arm avoids leaving the original hand beneath it.
-            layer("chibi", from: -1, to: 0).opacity(1 - min(1, max(0, progress / 0.22)))
-            layer("blindfold-touch", from: 0, to: 0.22).opacity(1 - min(1, max(0, (progress - 0.22) / 0.24)))
-            layer("blindfold-gaze", from: 0.22, to: 0.46)
-            layer("blindfold-smirk", from: 0.78, to: 1)
-        }.accessibilityHidden(true)
+        }.environment(\.preparedArtwork, entry.artwork)
+            .environment(\.scenePack, entry.pack)
     }
 }
 

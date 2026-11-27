@@ -63,6 +63,18 @@
       "source": "Original generated artwork for local personal use",
       "publicRelease": false
     },
-    {"file": "chibi-daytime.png", "source": "Original generated artwork for local personal use", "publicRelease": false}
-  ]
+    {
+      "file": "chibi-daytime.png",
+      "source": "Original generated artwork for local personal use",
+      "publicRelease": false
+    }
+  ],
+  "distribution": {
+    "status": "pending",
+    "rightsHolder": null,
+    "license": null,
+    "territory": null,
+    "channel": null
+  },
+  "evidence": null
 }

@@ -1,5 +1,22 @@
 {
-  "transition": "static",
+  "transitions": [
+    {
+      "id": "fan",
+      "surfaces": [
+        "app",
+        "widgetMedium",
+        "widgetLarge"
+      ],
+      "from": "folded",
+      "to": "open",
+      "duration": 0.95,
+      "assets": [
+        "chibi.png"
+      ],
+      "fallback": "staticPose",
+      "motion": "full"
+    }
+  ],
   "fallback": "systemSymbol",
   "states": {
     "neutral": {

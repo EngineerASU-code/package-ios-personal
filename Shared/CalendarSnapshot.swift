@@ -1,11 +1,18 @@
 import Foundation
 
+struct CalendarNoticeJournal: Codable, Equatable {
+    var reservations: [String: Date] = [:]
+    var desired: [String: Date] = [:]
+    var applied: [String: Date] = [:]
+}
+
 struct CalendarItem: Codable, Identifiable, Equatable {
     let id: String
     let start: Date
     let end: Date
     let allDay: Bool
     var title: String?
+    var seriesKey: String? = nil
 
     var label: String { title ?? "Событие" }
     var timeLabel: String {
@@ -24,7 +31,8 @@ extension Companion {
                 (old.title == nil || new.title == nil || old.title == new.title)
         }
         if !sameEvents || previous.overflow != next.overflow {
-            respond(to: .calendarChanged, at: date, source: .calendarSnapshot)
+            let facts = next.changeFacts(since: previous, at: date)
+            respond(to: .calendarChanged, at: date, source: .calendarSnapshot, facts: facts)
         }
     }
 }
@@ -56,6 +64,7 @@ struct CalendarSnapshot: Codable, Equatable {
     var expiry: Date?
     var events: [CalendarItem] = []
     var overflow = false
+    var cancelledOccurrenceIDs: Set<String>? = nil
 
     func filtered(by privacy: CalendarPrivacy) -> Self {
         switch privacy {
@@ -89,14 +98,14 @@ struct CalendarSnapshot: Codable, Equatable {
 
     // Persist before submission so interruption cannot lead to a second alert for the day.
     @MainActor static func registerWarning(_ key: String, at date: Date, ledger: inout [String: Date],
-                                           save: ([String: Date]) -> Void, add: () async throws -> Void) async throws {
+                                           save: ([String: Date]) throws -> Void, add: () async throws -> Void) async throws {
         ledger[key] = date
-        save(ledger)
+        try save(ledger)
         do {
             try await add()
         } catch {
             ledger.removeValue(forKey: key)
-            save(ledger)
+            try save(ledger)
             throw error
         }
     }
@@ -108,5 +117,30 @@ struct CalendarSnapshot: Codable, Equatable {
 
     func upcoming(at date: Date) -> [CalendarItem] {
         isFresh(at: date) ? events.filter { $0.end > date || $0.start >= date } : []
+    }
+
+    func dayFact(at date: Date, calendar: Calendar) -> String? {
+        guard isFresh(at: date), let endOfDay = calendar.dateInterval(of: .day, for: date)?.end else { return nil }
+        let remaining = upcoming(at: date).filter { $0.start < endOfDay }
+        if remaining.count >= 3 { return "calendarBusyDay" }
+        return remaining.isEmpty && !overflow ? "calendarClearDay" : nil
+    }
+
+    fileprivate func changeFacts(since previous: Self, at date: Date) -> Set<String> {
+        guard isFresh(at: date), previous.isFresh(at: date) else { return [] }
+        let before = previous.upcoming(at: date)
+        let after = upcoming(at: date)
+        if let cancelledOccurrenceIDs, before.contains(where: { cancelledOccurrenceIDs.contains($0.id) }) {
+            return ["calendarCancelled"]
+        }
+        guard !previous.overflow, !overflow else { return [] }
+        for old in before {
+            if after.contains(where: { new in
+                (new.id == old.id || (old.seriesKey != nil && old.seriesKey == new.seriesKey)) &&
+                    (new.start != old.start || new.end != old.end)
+            }) { return ["calendarMoved"] }
+        }
+        let ids = Set(after.map(\.id))
+        return before.contains { !ids.contains($0.id) } ? ["calendarRemoved"] : []
     }
 }

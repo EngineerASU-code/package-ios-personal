@@ -1,11 +1,19 @@
 // !$*UTF8*$!
 { archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+000000000000000000000079 = { isa = PBXShellScriptBuildPhase; alwaysOutOfDate = 1; buildActionMask = 2147483647; files = (); inputPaths = ("$(SRCROOT)/Scripts/check_release_rights.py", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Characters"); outputPaths = (); name = "Check distribution rights"; runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "if [ \"$ACTION\" = install ] && [ \"$PLATFORM_NAME\" = iphoneos ]; then\n  /usr/bin/python3 \"$SRCROOT/Scripts/check_release_rights.py\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Characters\" || exit 1\nfi\n"; };
+00000000000000000000007a = { isa = PBXShellScriptBuildPhase; alwaysOutOfDate = 1; buildActionMask = 2147483647; files = (); inputPaths = ("$(SRCROOT)/Scripts/check_release_rights.py", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Characters"); outputPaths = (); name = "Check distribution rights"; runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "if [ \"$ACTION\" = install ] && [ \"$PLATFORM_NAME\" = iphoneos ]; then\n  /usr/bin/python3 \"$SRCROOT/Scripts/check_release_rights.py\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Characters\" || exit 1\nfi\n"; };
+00000000000000000000007b = { isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "App/Assets.xcassets"; sourceTree = "<group>"; };
+00000000000000000000007c = { isa = PBXBuildFile; fileRef = 00000000000000000000007b; };
+000000000000000000000076 = { isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "Localization/Localizable.xcstrings"; sourceTree = "<group>"; };
+000000000000000000000077 = { isa = PBXBuildFile; fileRef = 000000000000000000000076; };
+000000000000000000000078 = { isa = PBXBuildFile; fileRef = 000000000000000000000076; };
 000000000000000000000072 = { isa = PBXFileReference; lastKnownFileType = text.xml; path = "App/PrivacyInfo.xcprivacy"; sourceTree = "<group>"; };
 000000000000000000000073 = { isa = PBXBuildFile; fileRef = 000000000000000000000072; };
 000000000000000000000074 = { isa = PBXFileReference; lastKnownFileType = text.xml; path = "Widget/PrivacyInfo.xcprivacy"; sourceTree = "<group>"; };
 000000000000000000000075 = { isa = PBXBuildFile; fileRef = 000000000000000000000074; };
 000000000000000000000070 = { isa = PBXFileReference; explicitFileType = sourcecode.swift; path = "Shared/CompanionNoticePlan.swift"; sourceTree = "<group>"; };
 000000000000000000000071 = { isa = PBXBuildFile; fileRef = 000000000000000000000070; };
+00000000000000000000007f = { isa = PBXBuildFile; fileRef = 000000000000000000000070; };
 00000000000000000000006c = { isa = PBXFileReference; explicitFileType = sourcecode.swift; path = "Shared/CalendarSnapshot.swift"; sourceTree = "<group>"; };
 00000000000000000000006d = { isa = PBXBuildFile; fileRef = 00000000000000000000006c; };
 00000000000000000000006e = { isa = PBXBuildFile; fileRef = 00000000000000000000006c; };
@@ -20,8 +28,8 @@
 000000000000000000000041 = { isa = PBXFileReference; lastKnownFileType = folder; path = "Shared/Characters"; sourceTree = "<group>"; };
 000000000000000000000042 = { isa = PBXBuildFile; fileRef = 000000000000000000000041; };
 000000000000000000000043 = { isa = PBXBuildFile; fileRef = 000000000000000000000041; };
-000000000000000000000044 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000042, 000000000000000000000075); runOnlyForDeploymentPostprocessing = 0; };
-000000000000000000000045 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000043, 000000000000000000000073); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000044 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000042, 000000000000000000000075, 000000000000000000000077); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000045 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000007c, 000000000000000000000043, 000000000000000000000073, 000000000000000000000078); runOnlyForDeploymentPostprocessing = 0; };
 000000000000000000000031 = { isa = PBXFileReference; explicitFileType = sourcecode.swift; path = "Shared/DayTimeline.swift"; sourceTree = "<group>"; };
 000000000000000000000032 = { isa = PBXBuildFile; fileRef = 000000000000000000000031; };
 000000000000000000000033 = { isa = PBXBuildFile; fileRef = 000000000000000000000031; };
@@ -33,7 +41,7 @@
 000000000000000000000006 = { isa = PBXFileReference; explicitFileType = wrapper.application; path = "MyCompanion.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 000000000000000000000007 = { isa = PBXFileReference; explicitFileType = wrapper.app-extension; path = "CompanionWidget.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 000000000000000000000008 = { isa = PBXGroup; children = (000000000000000000000006, 000000000000000000000007); name = Products; sourceTree = "<group>"; };
-000000000000000000000009 = { isa = PBXGroup; children = (000000000000000000000072, 000000000000000000000074, 000000000000000000000070, 00000000000000000000006c, 000000000000000000000069, 000000000000000000000066, 000000000000000000000063, 000000000000000000000060, 000000000000000000000041, 000000000000000000000031, 000000000000000000000001, 000000000000000000000002, 000000000000000000000003, 000000000000000000000004, 000000000000000000000005, 000000000000000000000008); sourceTree = "<group>"; };
+000000000000000000000009 = { isa = PBXGroup; children = (00000000000000000000007b, 000000000000000000000076, 000000000000000000000072, 000000000000000000000074, 000000000000000000000070, 00000000000000000000006c, 000000000000000000000069, 000000000000000000000066, 000000000000000000000063, 000000000000000000000060, 000000000000000000000041, 000000000000000000000031, 000000000000000000000001, 000000000000000000000002, 000000000000000000000003, 000000000000000000000004, 000000000000000000000005, 000000000000000000000008); sourceTree = "<group>"; };
 00000000000000000000000a = { isa = XCBuildConfiguration; name = Debug; buildSettings = { PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = local.mycompanion.widget; INFOPLIST_FILE = Widget/Info.plist; CODE_SIGN_ENTITLEMENTS = Shared/Companion.entitlements; APPLICATION_EXTENSION_API_ONLY = YES; SKIP_INSTALL = YES; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; };
 00000000000000000000000b = { isa = XCBuildConfiguration; name = Release; buildSettings = { PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = local.mycompanion.widget; INFOPLIST_FILE = Widget/Info.plist; CODE_SIGN_ENTITLEMENTS = Shared/Companion.entitlements; APPLICATION_EXTENSION_API_ONLY = YES; SKIP_INSTALL = YES;  }; };
 00000000000000000000000c = { isa = XCConfigurationList; buildConfigurations = (00000000000000000000000a, 00000000000000000000000b); defaultConfigurationName = Release; defaultConfigurationIsVisible = 0; };
@@ -41,20 +49,20 @@
 00000000000000000000000e = { isa = PBXBuildFile; fileRef = 000000000000000000000002;  };
 00000000000000000000000f = { isa = PBXBuildFile; fileRef = 000000000000000000000003;  };
 000000000000000000000010 = { isa = PBXBuildFile; fileRef = 000000000000000000000005;  };
-000000000000000000000011 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000006e, 000000000000000000000032, 00000000000000000000000d, 00000000000000000000000e, 00000000000000000000000f, 000000000000000000000010); runOnlyForDeploymentPostprocessing = 0;  };
-000000000000000000000012 = { isa = PBXNativeTarget; name = CompanionWidget; productName = CompanionWidget; productReference = 000000000000000000000007; productType = "com.apple.product-type.app-extension"; buildConfigurationList = 00000000000000000000000c; buildPhases = (000000000000000000000044, 000000000000000000000011); buildRules = (); dependencies = (); };
+000000000000000000000011 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000007f, 00000000000000000000006e, 000000000000000000000032, 00000000000000000000000d, 00000000000000000000000e, 00000000000000000000000f, 000000000000000000000010); runOnlyForDeploymentPostprocessing = 0;  };
+000000000000000000000012 = { isa = PBXNativeTarget; name = CompanionWidget; productName = CompanionWidget; productReference = 000000000000000000000007; productType = "com.apple.product-type.app-extension"; buildConfigurationList = 00000000000000000000000c; buildPhases = (000000000000000000000044, 000000000000000000000011, 000000000000000000000079); buildRules = (); dependencies = (); };
 000000000000000000000013 = { isa = PBXTargetDependency; target = 000000000000000000000012; };
 000000000000000000000014 = { isa = PBXBuildFile; fileRef = 000000000000000000000007; settings = { ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 000000000000000000000015 = { isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000014); runOnlyForDeploymentPostprocessing = 0; dstPath = ""; dstSubfolderSpec = 13; name = "Embed App Extensions"; };
-000000000000000000000016 = { isa = XCBuildConfiguration; name = Debug; buildSettings = { PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = local.mycompanion; INFOPLIST_FILE = App/Info.plist; CODE_SIGN_ENTITLEMENTS = Shared/Companion.entitlements;  SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; };
-000000000000000000000017 = { isa = XCBuildConfiguration; name = Release; buildSettings = { PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = local.mycompanion; INFOPLIST_FILE = App/Info.plist; CODE_SIGN_ENTITLEMENTS = Shared/Companion.entitlements;   }; };
+000000000000000000000016 = { isa = XCBuildConfiguration; name = Debug; buildSettings = { PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = local.mycompanion; INFOPLIST_FILE = App/Info.plist; ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_ENTITLEMENTS = Shared/Companion.entitlements;  SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; };
+000000000000000000000017 = { isa = XCBuildConfiguration; name = Release; buildSettings = { PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = local.mycompanion; INFOPLIST_FILE = App/Info.plist; ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_ENTITLEMENTS = Shared/Companion.entitlements;   }; };
 000000000000000000000018 = { isa = XCConfigurationList; buildConfigurations = (000000000000000000000016, 000000000000000000000017); defaultConfigurationName = Release; defaultConfigurationIsVisible = 0; };
 000000000000000000000019 = { isa = PBXBuildFile; fileRef = 000000000000000000000001;  };
 00000000000000000000001a = { isa = PBXBuildFile; fileRef = 000000000000000000000002;  };
 00000000000000000000001b = { isa = PBXBuildFile; fileRef = 000000000000000000000003;  };
 00000000000000000000001c = { isa = PBXBuildFile; fileRef = 000000000000000000000004;  };
 00000000000000000000001d = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000071, 00000000000000000000006d, 00000000000000000000006a, 000000000000000000000067, 000000000000000000000064, 000000000000000000000061, 000000000000000000000033, 000000000000000000000019, 00000000000000000000001a, 00000000000000000000001b, 00000000000000000000001c); runOnlyForDeploymentPostprocessing = 0;  };
-00000000000000000000001e = { isa = PBXNativeTarget; name = MyCompanion; productName = MyCompanion; productReference = 000000000000000000000006; productType = "com.apple.product-type.application"; buildConfigurationList = 000000000000000000000018; buildPhases = (000000000000000000000045, 00000000000000000000001d, 000000000000000000000015); buildRules = (); dependencies = (000000000000000000000013); };
+00000000000000000000001e = { isa = PBXNativeTarget; name = MyCompanion; productName = MyCompanion; productReference = 000000000000000000000006; productType = "com.apple.product-type.application"; buildConfigurationList = 000000000000000000000018; buildPhases = (000000000000000000000045, 00000000000000000000001d, 000000000000000000000015, 00000000000000000000007a); buildRules = (); dependencies = (000000000000000000000013); };
 00000000000000000000001f = { isa = XCBuildConfiguration; name = Debug; buildSettings = { SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 17.0; TARGETED_DEVICE_FAMILY = 1; SWIFT_VERSION = 5.0; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1; CLANG_ENABLE_MODULES = YES; OTHER_LDFLAGS = "-lsqlite3"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; };
 000000000000000000000020 = { isa = XCBuildConfiguration; name = Release; buildSettings = { SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 17.0; TARGETED_DEVICE_FAMILY = 1; SWIFT_VERSION = 5.0; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1; CLANG_ENABLE_MODULES = YES; OTHER_LDFLAGS = "-lsqlite3";  }; };
 000000000000000000000021 = { isa = XCConfigurationList; buildConfigurations = (00000000000000000000001f, 000000000000000000000020); defaultConfigurationName = Release; defaultConfigurationIsVisible = 0; };

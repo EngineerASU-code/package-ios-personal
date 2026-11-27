@@ -25,10 +25,22 @@ jobs:
         run: |
           gem list -i xcodeproj || gem install xcodeproj --user-install --no-document
           ruby Scripts/stage5/prepare.rb reminders
-          device=$(xcrun simctl list devices available -j | python3 -c 'import sys,json; print(next(d["udid"] for k,v in json.load(sys.stdin)["devices"].items() if k.endswith(".iOS-18-5") for d in v if d["name"] == "iPhone 16"))')
+          mkdir -p evidence
+          xcodebuild -version > evidence/xcode.txt
+          xcrun simctl list devices available -j > evidence/devices.json
+          uname -s > evidence/host.txt
+          sw_vers >> evidence/host.txt
+          xcrun simctl list devicetypes -j > evidence/device-types.json
+          xcodebuild -showsdks > evidence/sdks.txt
+          xcrun simctl list runtimes -j > evidence/runtimes.json
+          device=$(python3 Scripts/select_simulator.py evidence/devices.json evidence/destination.json)
+          cat evidence/destination.json
           echo "DEVICE=$device" >> "$GITHUB_ENV"
-          xcrun simctl boot "$device"
+          if ! python3 -c 'import json, sys; sys.exit(json.load(open("evidence/destination.json"))["state"] != "Booted")'; then
+            xcrun simctl boot "$device"
+          fi
           xcrun simctl bootstatus "$device" -b
+          xcodebuild -project MyCompanion.xcodeproj -scheme Reminders -showdestinations > evidence/destinations.txt
       - name: Check notification permission and system queue
         env:
           TEST: ${{ matrix.test }}
@@ -50,6 +62,7 @@ jobs:
         with:
           name: reminder-${{ matrix.test }}
           path: |
+            evidence/
             Calendar.xcresult
             core-tests.log
             calendar-test.log

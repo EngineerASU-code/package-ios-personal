@@ -7,6 +7,11 @@ final class ReminderUITests: XCTestCase {
     private func start(grant: Bool) {
         continueAfterFailure = false
         app.launch()
+        app.tabBars.buttons["Настройки"].tap()
+        let diagnostics = app.buttons["Диагностика"]
+        for _ in 0..<4 where !diagnostics.isHittable { app.swipeUp() }
+        XCTAssertTrue(diagnostics.isHittable)
+        diagnostics.tap()
         app.buttons["Напомнить через минуту"].tap()
         let alert = springboard.alerts.firstMatch
         XCTAssertTrue(alert.waitForExistence(timeout: 12))

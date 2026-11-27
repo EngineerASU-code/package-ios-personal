@@ -71,6 +71,28 @@ final class StoreTests: XCTestCase {
         }
     }
 
+    func testStaleIntentCannotCreateOrReplaceMissingState() throws {
+        let staleTap: (inout Companion) -> Bool = { _ in
+            XCTFail("Missing snapshots must never receive a tap")
+            return true
+        }
+        XCTAssertNil(try store.updateIfPresent(staleTap))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.url.path))
+        let saved = try store.update { $0.hero = .maomao }
+        XCTAssertEqual(try store.updateIfPresent { state in
+            state.hero = .toji
+            return false
+        }, saved)
+        XCTAssertEqual(try store.read(), saved)
+        XCTAssertEqual(try store.updateIfPresent { state in
+            state.hero = .jinshi
+            return true
+        }?.hero, .jinshi)
+        try connection { db in try execute(db, "DELETE FROM snapshot") }
+        XCTAssertNil(try store.updateIfPresent(staleTap))
+        XCTAssertNil(try store.readIfPresent())
+    }
+
     func testInterruptedWriteAndBusyDatabaseKeepCommittedState() throws {
         let before = try store.update { $0.hero = .maomao }
         try connection { db in

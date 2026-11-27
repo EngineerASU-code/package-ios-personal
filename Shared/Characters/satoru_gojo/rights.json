@@ -58,5 +58,13 @@
       "file": "blindfold-smirk.png",
       "source": "Generated sprite-sheet adaptation of chibi.png for local personal use"
     }
-  ]
+  ],
+  "distribution": {
+    "status": "pending",
+    "rightsHolder": null,
+    "license": null,
+    "territory": null,
+    "channel": null
+  },
+  "evidence": null
 }

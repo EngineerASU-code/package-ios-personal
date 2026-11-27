@@ -7,6 +7,60 @@ import UserNotifications
 private struct NoticePreferences: Equatable {
     var morning, bedtime: Bool
     var morningTime, bedtimeTime, quietStart, quietEnd: Int
+    var support, gifts, enabled: Bool
+    var schedule: DaySchedule
+    var intensity: CommunicationIntensity
+}
+
+enum NoticeDelivery {
+    static var enabled: Bool { UserDefaults.standard.object(forKey: "allNotificationsEnabled") as? Bool ?? true }
+
+    static func add(_ request: UNNotificationRequest, to center: UNUserNotificationCenter) async throws {
+        guard enabled else { throw CancellationError() }
+        try await center.add(request)
+        if !enabled {
+            center.removePendingNotificationRequests(withIdentifiers: [request.identifier])
+            throw CancellationError()
+        }
+    }
+
+    static func cancelWhenDisabled() async {
+        let center = UNUserNotificationCenter.current()
+        let requests = await center.pendingNotificationRequests()
+        guard !enabled else { return }
+        let ids = requests.map(\.identifier).filter {
+            $0 == "mycompanion.preview" || $0.hasPrefix("mycompanion.task.") ||
+                $0.hasPrefix("companion.calendar.") || CompanionNoticeSlot.owns($0)
+        }
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+    }
+}
+
+@MainActor final class NoticeJournalStorage<Value: Equatable> {
+    private let store: Store
+    private let field: WritableKeyPath<Companion, Value?>
+    private var saved: Value?
+    var current: Value
+
+    init(_ field: WritableKeyPath<Companion, Value?>, migrate: () throws -> Value) throws {
+        self.field = field
+        store = try Store.shared()
+        let previous = try store.read()[keyPath: field]
+        saved = previous
+        current = try previous ?? migrate()
+    }
+
+    func persist() throws {
+        guard current != saved else { return }
+        var committed = false
+        try store.update { state in
+            guard state[keyPath: field] == saved else { return }
+            state[keyPath: field] = current
+            committed = true
+        }
+        guard committed else { throw StoreError.database }
+        saved = current
+    }
 }
 
 extension Notification.Name {
@@ -26,7 +80,9 @@ extension Notification.Name {
         morningTime: defaults.object(forKey: "companionMorningTime") as? Int ?? 480,
         bedtimeTime: defaults.object(forKey: "companionBedtimeTime") as? Int ?? 1365,
         quietStart: defaults.object(forKey: "quietStartHour") as? Int ?? 23,
-        quietEnd: defaults.object(forKey: "quietEndHour") as? Int ?? 7
+        quietEnd: defaults.object(forKey: "quietEndHour") as? Int ?? 7,
+        support: defaults.bool(forKey: "companionSupportEnabled"), gifts: defaults.bool(forKey: "companionGiftsEnabled"),
+        enabled: NoticeDelivery.enabled, schedule: state.daySchedule, intensity: state.communicationIntensity
     )
     await CompanionNotices.shared.update(hero: state.hero, mode: state.mode, settings: settings)
 }
@@ -74,46 +130,73 @@ struct ResumeCompanionIntent: AppIntent {
         let center = UNUserNotificationCenter.current()
         let permission = await center.notificationSettings().authorizationStatus
         let permitted = [.authorized, .provisional, .ephemeral].contains(permission)
+        if !settings.enabled {
+            center.removePendingNotificationRequests(withIdentifiers: ["mycompanion.preview"])
+        }
         let now = Date()
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
-        let plan = CompanionNoticePlan(morning: settings.morning ? settings.morningTime : nil,
+        var plan = CompanionNoticePlan(morning: settings.morning ? settings.morningTime : nil,
                                       bedtime: settings.bedtime ? settings.bedtimeTime : nil,
                                       quietStart: settings.quietStart, quietEnd: settings.quietEnd)
-        let slots = permitted && (mode == .normal || mode == .eco) ? plan.slots(hero: hero, now: now, calendar: calendar) : []
-        let pending = await center.pendingNotificationRequests().filter { CompanionNoticeSlot.owns($0.identifier) }
-        if slots.isEmpty && !pending.isEmpty {
-            // An unreadable history must never keep disabled decorative alerts scheduled.
-            center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier))
+        let active = settings.enabled && permitted && (mode == .normal || mode == .eco)
+        plan.support = settings.support
+        plan.daySchedule = settings.schedule
+        plan.communicationIntensity = settings.intensity
+        if active && settings.gifts, let state = try? Store.shared().read(), state.hero == hero {
+            let finds = Set(hero.pack?.finds.map(\.id) ?? [])
+            plan.gift = state.unlocks.filter { finds.contains($0.id) }.max { $0.date < $1.date }
         }
+        let slots = active ? plan.slots(hero: hero, now: now, calendar: calendar) : []
+        let pending = await center.pendingNotificationRequests().filter { CompanionNoticeSlot.owns($0.identifier) }
+        // Cancellations remain possible even when the budget journal cannot be read.
+        let obsolete = pending.map(\.identifier).filter { id in
+            !active || (id.hasPrefix("companion.greeting.") && !settings.morning) ||
+                (id.hasPrefix("companion.bedtime.") && !settings.bedtime) ||
+                (id.hasPrefix("companion.support.") && !settings.support) ||
+                (id.hasPrefix("companion.gift.") && !settings.gifts)
+        }
+        if !obsolete.isEmpty { center.removePendingNotificationRequests(withIdentifiers: obsolete) }
         let defaults = UserDefaults.standard
         let ledgerKey = "companion.notice.budget.v2"
-        var ledger = CompanionNoticeLedger()
-        if let data = defaults.data(forKey: ledgerKey) {
-            guard let saved = try? PropertyListDecoder().decode(CompanionNoticeLedger.self, from: data) else {
-                if slots.isEmpty, !pending.isEmpty,
-                   await center.pendingNotificationRequests().contains(where: { CompanionNoticeSlot.owns($0.identifier) }) {
-                    status = "Система пока не подтвердила отмену личных уведомлений."
-                    return
+        let oldKey = "companion.notice.appliedDates"
+        let journal: NoticeJournalStorage<PersonalNoticeJournal>
+        do {
+            journal = try NoticeJournalStorage(\.personalNoticeJournal) {
+                var migrated = PersonalNoticeJournal()
+                if let data = defaults.object(forKey: ledgerKey) {
+                    guard let data = data as? Data else { throw StoreError.database }
+                    migrated.ledger = try PropertyListDecoder().decode(CompanionNoticeLedger.self, from: data)
+                } else if let raw = defaults.object(forKey: oldKey) {
+                    guard let previous = raw as? [String: Date] else { throw StoreError.database }
+                    for (id, date) in previous {
+                        migrated.ledger.entries[id] = .init(date: date, localDay: CompanionNoticeLedger.day(date, calendar: calendar), spent: false)
+                    }
                 }
-                status = "Не удалось прочитать историю расписания."
-                return
+                return migrated
             }
-            ledger = saved
+        } catch {
+            status = "Не удалось прочитать историю расписания."
+            return
+        }
+        let desired: [CompanionNoticeSlot]
+        if slots.isEmpty && journal.current.ledger.entries.isEmpty {
+            desired = []
         } else {
-            let previous = defaults.dictionary(forKey: "companion.notice.appliedDates") as? [String: Date] ?? [:]
-            for (id, date) in previous {
-                ledger.entries[id] = .init(date: date, localDay: CompanionNoticeLedger.day(date, calendar: calendar), spent: false)
+            var pendingForBudget = Set(pending.map(\.identifier))
+            if now >= journal.current.ledger.latestCheck {
+                // A crash may leave a future reservation committed before UN.add or queue verification.
+                for slot in journal.current.desired where slot.date > now && !journal.current.applied.contains(slot.id) {
+                    pendingForBudget.insert(slot.id)
+                }
             }
+            desired = journal.current.ledger.reconcile(now: now, pending: pendingForBudget, slots: slots, calendar: calendar)
         }
-        func persist() throws {
-            defaults.set(try PropertyListEncoder().encode(ledger), forKey: ledgerKey)
-        }
-        let desired = ledger.reconcile(now: now, pending: Set(pending.map(\.identifier)), slots: slots, calendar: calendar)
         let ids = Set(desired.map(\.id))
         let stale = pending.map(\.identifier).filter { !ids.contains($0) }
-        if !slots.isEmpty && !stale.isEmpty { center.removePendingNotificationRequests(withIdentifiers: stale) }
-        ledger.entries = ledger.entries.filter { $0.value.spent || ids.contains($0.key) }
+        journal.current.ledger.entries = journal.current.ledger.entries.filter { $0.value.spent || ids.contains($0.key) }
+        journal.current.desired = desired
+        journal.current.hero = desired.isEmpty ? nil : hero
         let title = "Мой Компаньон · \(hero.name)"
         func matches(_ request: UNNotificationRequest, _ slot: CompanionNoticeSlot) -> Bool {
             request.identifier == slot.id && request.content.title == title && request.content.body == slot.body &&
@@ -121,11 +204,14 @@ struct ResumeCompanionIntent: AppIntent {
                 (request.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() == slot.date
         }
         do {
-            try persist()
+            try journal.persist()
+            defaults.removeObject(forKey: ledgerKey)
+            defaults.removeObject(forKey: oldKey)
+            if !stale.isEmpty { center.removePendingNotificationRequests(withIdentifiers: stale) }
             for slot in desired {
-                let previous = ledger.entries[slot.id]
-                ledger.reserve(slot, calendar: calendar)
-                try persist()
+                let previous = journal.current.ledger.entries[slot.id]
+                journal.current.ledger.reserve(slot, calendar: calendar)
+                try journal.persist()
                 if !pending.contains(where: { matches($0, slot) }) {
                     let content = UNMutableNotificationContent()
                     content.title = title
@@ -135,18 +221,19 @@ struct ResumeCompanionIntent: AppIntent {
                     parts.timeZone = calendar.timeZone
                     let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
                     do {
-                        try await center.add(UNNotificationRequest(identifier: slot.id, content: content, trigger: trigger))
+                        try await NoticeDelivery.add(UNNotificationRequest(identifier: slot.id, content: content, trigger: trigger), to: center)
                     } catch {
-                        ledger.entries[slot.id] = previous
-                        try persist()
-                        throw error
+                        journal.current.ledger.entries[slot.id] = previous
+                        try journal.persist()
                     }
                 }
             }
             let applied = await center.pendingNotificationRequests().filter { CompanionNoticeSlot.owns($0.identifier) }
+            journal.current.applied = Set(desired.filter { slot in applied.contains { matches($0, slot) } }.map(\.id))
+            try journal.persist()
             let verified = applied.count == desired.count && desired.allSatisfy { slot in applied.contains { matches($0, slot) } }
             if !verified { status = "Система пока не подтвердила расписание." }
-            else if !settings.morning && !settings.bedtime { status = "Личные уведомления выключены." }
+            else if !settings.enabled || (!settings.morning && !settings.bedtime && !settings.support && !settings.gifts) { status = "Личные уведомления выключены." }
             else if !permitted { status = "Для доставки разрешите уведомления в настройках iOS." }
             else if mode == .safe || mode == .paused { status = "В этом режиме личные уведомления приостановлены." }
             else { status = "Запланировано на ближайшие три дня: \(applied.count)." }
@@ -157,9 +244,15 @@ struct ResumeCompanionIntent: AppIntent {
 private struct NoticeReconciliation: ViewModifier {
     let hero: Hero
     let mode: CompanionMode
+    let schedule: DaySchedule
+    let latestUnlock: String?
+    let intensity: CommunicationIntensity
     @Environment(\.scenePhase) private var phase
     @AppStorage("companionMorningEnabled") private var morning = false
     @AppStorage("companionBedtimeEnabled") private var bedtime = false
+    @AppStorage("companionSupportEnabled") private var support = false
+    @AppStorage("companionGiftsEnabled") private var gifts = false
+    @AppStorage("allNotificationsEnabled") private var enabled = true
     @AppStorage("companionMorningTime") private var morningTime = 480
     @AppStorage("companionBedtimeTime") private var bedtimeTime = 1365
     @AppStorage("quietStartHour") private var quietStart = 23
@@ -167,22 +260,26 @@ private struct NoticeReconciliation: ViewModifier {
 
     func body(content: Content) -> some View {
         let preferences = NoticePreferences(morning: morning, bedtime: bedtime, morningTime: morningTime,
-                                           bedtimeTime: bedtimeTime, quietStart: quietStart, quietEnd: quietEnd)
+                                           bedtimeTime: bedtimeTime, quietStart: quietStart, quietEnd: quietEnd,
+                                           support: support, gifts: gifts, enabled: enabled, schedule: schedule, intensity: intensity)
         let refresh = {
             Task { @MainActor in await CompanionNotices.shared.update(hero: hero, mode: mode, settings: preferences) }
         }
         return content.onAppear { _ = refresh() }
+            .onChange(of: enabled) { _, _ in Task { _ = await ReminderNotifications.shared.reconcile() } }
             .onChange(of: phase) { _, value in if value == .active { _ = refresh() } }
             .onChange(of: preferences) { _, _ in _ = refresh() }
             .onChange(of: hero) { _, _ in _ = refresh() }
             .onChange(of: mode) { _, _ in _ = refresh() }
+            .onChange(of: latestUnlock) { _, _ in if gifts { _ = refresh() } }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in _ = refresh() }
     }
 }
 
 extension View {
-    func companionNoticeReconciliation(hero: Hero, mode: CompanionMode) -> some View {
-        modifier(NoticeReconciliation(hero: hero, mode: mode))
+    func companionNoticeReconciliation(hero: Hero, mode: CompanionMode, schedule: DaySchedule, latestUnlock: String?,
+                                      intensity: CommunicationIntensity) -> some View {
+        modifier(NoticeReconciliation(hero: hero, mode: mode, schedule: schedule, latestUnlock: latestUnlock, intensity: intensity))
     }
 }
 
@@ -190,6 +287,10 @@ struct CompanionNoticePanel: View {
     @ObservedObject private var notices = CompanionNotices.shared
     @AppStorage("companionMorningEnabled") private var morning = false
     @AppStorage("companionBedtimeEnabled") private var bedtime = false
+    @AppStorage("companionSupportEnabled") private var support = false
+    @AppStorage("companionGiftsEnabled") private var gifts = false
+    @AppStorage("allNotificationsEnabled") private var enabled = true
+    @State private var confirmDisable = false
     @AppStorage("companionMorningTime") private var morningTime = 480
     @AppStorage("companionBedtimeTime") private var bedtimeTime = 1365
     @AppStorage("quietStartHour") private var quietStart = 23
@@ -200,12 +301,23 @@ struct CompanionNoticePanel: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Все уведомления", isOn: Binding(get: { enabled }, set: { value in
+                    if value { enabled = true } else { confirmDisable = true }
+                }))
+            }
             Section("Расписание") {
                 noticeToggle("Доброе утро", setting: $morning)
                 if morning { timePicker("Утром", setting: $morningTime) }
                 noticeToggle("Пора отдыхать", setting: $bedtime)
                 if bedtime { timePicker("Перед сном", setting: $bedtimeTime) }
-            }
+                noticeToggle("Редкая поддержка", setting: $support)
+                noticeToggle("Сообщать о полученных находках", setting: $gifts)
+                if support || gifts {
+                    Text("До двух личных сообщений в день. Сначала учитываются утро и сон. Для календаря предусмотрено отдельное предупреждение.")
+                        .font(.footnote)
+                }
+            }.disabled(!enabled)
             Section("Тихие часы") {
                 hourPicker("Начало", setting: $quietStart)
                 hourPicker("Окончание", setting: $quietEnd)
@@ -216,6 +328,15 @@ struct CompanionNoticePanel: View {
             if !authorizationMessage.isEmpty { Text(authorizationMessage) }
             if !notices.status.isEmpty { Text(notices.status) }
         }.navigationTitle("Уведомления героя")
+        .confirmationDialog("Отключить все уведомления?", isPresented: $confirmDisable, titleVisibility: .visible) {
+            Button("Отключить все уведомления", role: .destructive) {
+                enabled = false
+                Task { await NoticeDelivery.cancelWhenDisabled() }
+            }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Предупреждения о событиях и задачах будут отменены. Сами задачи и события сохранятся.")
+        }
     }
 
     private func noticeToggle(_ label: String, setting: Binding<Bool>) -> some View {

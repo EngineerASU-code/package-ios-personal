@@ -1,5 +1,24 @@
 {
-  "transition": "static",
+  "transitions": [
+    {
+      "id": "expression",
+      "surfaces": [
+        "app",
+        "widgetMedium",
+        "widgetLarge"
+      ],
+      "from": "calm",
+      "to": "smirk",
+      "duration": 0.9,
+      "assets": [
+        "tap-calm.png",
+        "tap-chin.png",
+        "tap-smirk.png"
+      ],
+      "fallback": "staticPose",
+      "motion": "full"
+    }
+  ],
   "fallback": "systemSymbol",
   "states": {
     "neutral": {

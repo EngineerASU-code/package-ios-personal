@@ -1,16 +1,23 @@
 import Foundation
 
-struct CompanionNoticeSlot: Equatable {
+struct PersonalNoticeJournal: Codable, Equatable {
+    var ledger = CompanionNoticeLedger()
+    var hero: Hero?
+    var desired: [CompanionNoticeSlot] = []
+    var applied: Set<String> = []
+}
+
+struct CompanionNoticeSlot: Codable, Equatable {
     let id, category, body: String
     let date: Date
 
     static func owns(_ id: String) -> Bool {
-        id.hasPrefix("companion.greeting.") || id.hasPrefix("companion.bedtime.")
+        ["companion.greeting.", "companion.bedtime.", "companion.support.", "companion.gift."].contains { id.hasPrefix($0) }
     }
 }
 
-struct CompanionNoticeLedger: Codable {
-    struct Entry: Codable {
+struct CompanionNoticeLedger: Codable, Equatable {
+    struct Entry: Codable, Equatable {
         let date: Date
         let localDay: Int
         var spent: Bool
@@ -37,7 +44,7 @@ struct CompanionNoticeLedger: Codable {
         for (id, entry) in entries where entry.spent {
             // Preserve the scheduled civil day and account for its instant in the current zone.
             let days: Set<Int> = [entry.localDay, Self.day(entry.date, calendar: calendar)]
-            let category = id.hasPrefix("companion.greeting.") ? "companion.greeting" : "companion.bedtime"
+            let category = id.split(separator: ".").prefix(2).joined(separator: ".")
             for day in days {
                 counts[day, default: 0] += 1
                 categories[day, default: []].insert(category)
@@ -46,14 +53,27 @@ struct CompanionNoticeLedger: Codable {
         // Beyond retained history, suppress replay after severe clock rollback. The margin
         // covers a civil day plus the largest difference between two civil time zones.
         guard now >= earliest.addingTimeInterval(3 * 86400) else { return [] }
-        return slots.filter { slot in
+        let ordered = slots.sorted { lhs, rhs in
+            func priority(_ slot: CompanionNoticeSlot) -> Int {
+                switch slot.category {
+                case "companion.support": return 2
+                case "companion.gift": return 1
+                default: return 0
+                }
+            }
+            return priority(lhs) == priority(rhs) ? lhs.date < rhs.date : priority(lhs) < priority(rhs)
+        }
+        return ordered.filter { slot in
             let day = Self.day(slot.date, calendar: calendar)
             guard entries[slot.id]?.spent != true,
                   counts[day, default: 0] < 2, !categories[day, default: []].contains(slot.category) else { return false }
+            if slot.category == "companion.gift", entries.contains(where: { id, entry in
+                id != slot.id && id.hasPrefix("companion.gift.") && abs(entry.date.timeIntervalSince(slot.date)) < 3 * 86400
+            }) { return false }
             counts[day, default: 0] += 1
             categories[day, default: []].insert(slot.category)
             return true
-        }
+        }.sorted { $0.date < $1.date }
     }
 
     mutating func reserve(_ slot: CompanionNoticeSlot, calendar: Calendar) {
@@ -66,6 +86,10 @@ struct CompanionNoticePlan {
     var bedtime: Int?
     var quietStart: Int
     var quietEnd: Int
+    var support = false
+    var gift: Unlock? = nil
+    var daySchedule = DaySchedule()
+    var communicationIntensity = CommunicationIntensity.standard
 
     func slots(hero: Hero, now: Date, calendar: Calendar) -> [CompanionNoticeSlot] {
         guard let pack = hero.pack else { return [] }
@@ -81,19 +105,40 @@ struct CompanionNoticePlan {
                 guard !inQuiet, let date = calendar.date(bySettingHour: hour, minute: time % 60,
                     second: 0, of: day, matchingPolicy: .strict, repeatedTimePolicy: .first, direction: .forward),
                     calendar.isDate(date, inSameDayAs: day), date > now else { continue }
-                let nightOffset = !isMorning && hour < 5 ? -1 : 0
+                let nightOffset = !isMorning && hour < daySchedule.dawn ? -1 : 0
                 guard let keyDay = calendar.date(byAdding: .day, value: nightOffset, to: day) else { continue }
                 let parts = calendar.dateComponents([.year, .month, .day], from: keyDay)
-                let key = String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!)
+                guard let year = parts.year, let month = parts.month, let dayNumber = parts.day else { continue }
+                let key = String(format: "%04d-%02d-%02d", year, month, dayNumber)
                 let category = isMorning ? "greeting" : "bedtime"
                 let id = "companion.\(category).\(key)"
                 let seed = (id + hero.rawValue).utf8.reduce(UInt64(14695981039346656037)) { ($0 ^ UInt64($1)) &* 1099511628211 }
                 let trigger = isMorning ? "scheduledGreeting" : "bedtimeReminder"
                 guard let line = CharacterPack.notificationLine(in: pack.records, trigger: trigger, facts: [], slot: seed,
                                                                 mood: pack.disposition.defaultMood, intensity: pack.personality.intensity,
-                                                                period: DayPeriod(hour: hour)) else { continue }
+                                                                period: daySchedule.period(hour: hour),
+                                                                communicationIntensity: communicationIntensity) else { continue }
                 slots.append(CompanionNoticeSlot(id: id, category: "companion.\(category)",
                                                  body: line.shortText ?? line.text, date: date))
+            }
+            let hour = 14
+            let quiet = quietStart < quietEnd ? (quietStart..<quietEnd).contains(hour)
+                : quietStart != quietEnd && (hour >= quietStart || hour < quietEnd)
+            guard !quiet, let date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day),
+                  date > now else { continue }
+            if let gift, let tomorrow = calendar.date(byAdding: .day, value: 1, to: gift.date),
+               calendar.isDate(tomorrow, inSameDayAs: date), let find = pack.finds.first(where: { $0.id == gift.id }) {
+                slots.append(.init(id: "companion.gift." + find.id, category: "companion.gift",
+                                   body: "В вашей галерее есть находка «\(find.title)».", date: date))
+            } else if support && [3, 5, 7].contains(calendar.component(.weekday, from: date)) {
+                let key = CompanionNoticeLedger.day(date, calendar: calendar)
+                let seed = UInt64(key)
+                if let line = CharacterPack.notificationLine(in: pack.records, trigger: "randomSlot", facts: [], slot: seed,
+                                                            mood: pack.disposition.defaultMood, intensity: pack.personality.intensity,
+                                                            period: daySchedule.period(hour: hour), communicationIntensity: communicationIntensity) {
+                    slots.append(.init(id: "companion.support.\(key)", category: "companion.support",
+                                       body: line.shortText ?? line.text, date: date))
+                }
             }
         }
         return slots.sorted { $0.date < $1.date }

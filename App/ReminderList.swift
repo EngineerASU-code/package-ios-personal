@@ -104,7 +104,7 @@ actor ReminderNotifications {
             state.respond(to: .reminderCreated)
         }
         WidgetCenter.shared.reloadTimelines(ofKind: "Companion")
-        if await center.notificationSettings().authorizationStatus == .notDetermined {
+        if NoticeDelivery.enabled, await center.notificationSettings().authorizationStatus == .notDetermined {
             _ = try? await center.requestAuthorization(options: [.alert])
         }
         return await reconcile()
@@ -138,6 +138,14 @@ actor ReminderNotifications {
     }
 
     private func sync() async -> String {
+        if !NoticeDelivery.enabled {
+            let own = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }
+            center.removePendingNotificationRequests(withIdentifiers: own)
+            if await center.pendingNotificationRequests().contains(where: { $0.identifier.hasPrefix(prefix) }) {
+                return "Система пока не подтвердила отмену уведомлений о задачах."
+            }
+            return "Уведомления отключены в настройках компаньона. Задачи сохранены."
+        }
         do {
             let tasks = try Store.shared().read().reminders
             let defaults = UserDefaults.standard
@@ -171,22 +179,24 @@ actor ReminderNotifications {
             for (task, date) in desired {
                 let id = prefix + task.id.uuidString
                 let stamp = Int(date.timeIntervalSince1970)
-                if own.contains(where: { $0.identifier == id && $0.content.userInfo["revision"] as? Int == task.revision &&
+                if own.contains(where: { $0.identifier == id && $0.content.userInfo["occurrence"] as? String == task.occurrenceKey &&
+                    $0.content.userInfo["revision"] as? Int == task.revision &&
                     $0.content.userInfo["fireTime"] as? Int == stamp }) { continue }
                 let content = UNMutableNotificationContent()
                 content.title = "Мой Компаньон"
                 content.body = "У вас запланирована задача."
                 content.categoryIdentifier = "MYCOMPANION_TASK"
-                content.userInfo = ["taskID": task.id.uuidString, "revision": task.revision, "fireTime": stamp]
+                content.userInfo = ["taskID": task.id.uuidString, "occurrence": task.occurrenceKey, "revision": task.revision, "fireTime": stamp]
                 let parts = Calendar.current.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: date)
                 let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
-                do { try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) }
+                do { try await NoticeDelivery.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger), to: center) }
                 catch { failures += 1 }
             }
             let verified = await center.pendingNotificationRequests().filter { $0.identifier.hasPrefix(prefix) }
             let matchesPlan = desired.allSatisfy { task, date in
                 verified.contains { request in
                     request.identifier == prefix + task.id.uuidString &&
+                    request.content.userInfo["occurrence"] as? String == task.occurrenceKey &&
                     request.content.userInfo["revision"] as? Int == task.revision &&
                     request.content.userInfo["fireTime"] as? Int == Int(date.timeIntervalSince1970)
                 }
@@ -210,14 +220,21 @@ struct ReminderList: View {
     @State private var scheduleMessage = ""
 
     var body: some View {
+        let now = Date()
+        let deadlines = phase == .active ? items.filter { $0.completedAt == nil }.compactMap(\.target).filter { $0 > now } : []
+        TimelineView(.explicit([now] + Set(deadlines).sorted())) { context in
+            list(at: max(now, context.date))
+        }
+    }
+
+    private func list(at now: Date) -> some View {
         List {
             if items.isEmpty {
                 ContentUnavailableView("Задач пока нет", systemImage: "checklist", description: Text("Нажмите «Добавить», чтобы создать напоминание."))
             } else {
-                let now = Date()
                 let active = items.filter { $0.completedAt == nil }.sorted { ($0.target ?? .distantFuture) < ($1.target ?? .distantFuture) }
-                group("Просроченные", active.filter { ($0.target ?? .distantFuture) < now })
-                group("Активные", active.filter { ($0.target ?? .distantFuture) >= now })
+                group("Просроченные", active.filter { $0.status(at: now) == .overdue })
+                group("Активные", active.filter { $0.status(at: now) == .active })
                 group("Завершённые", items.filter { $0.completedAt != nil }.sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) })
             }
             if !message.isEmpty { Text(message) }
@@ -303,6 +320,7 @@ struct ReminderList: View {
                 var updated = item
                 if state.reminders[i].dueAt != item.dueAt || state.reminders[i].recurrence != item.recurrence {
                     updated.seriesAnchor = nil
+                    updated.seriesTimeZone = item.recurrence == .once ? nil : TimeZone.current.identifier
                 }
                 state.reminders[i] = updated
             } else {
@@ -323,15 +341,18 @@ private enum ReminderEditError: Error { case changed }
 private struct ReminderEditor: View {
     @Environment(\.dismiss) private var dismiss
     let existing: Bool
+    let original: LocalReminder
     let save: (LocalReminder, Bool) throws -> Void
     @State private var item: LocalReminder
     @State private var timed: Bool
     @State private var date: Date
     @State private var error = ""
     @State private var saving = false
+    @State private var confirmSeries = false
 
     init(original: LocalReminder, existing: Bool, save: @escaping (LocalReminder, Bool) throws -> Void) {
         self.existing = existing
+        self.original = original
         self.save = save
         _item = State(initialValue: original)
         _timed = State(initialValue: original.dueAt != nil)
@@ -342,6 +363,7 @@ private struct ReminderEditor: View {
         NavigationStack {
             Form {
                 TextField("Название задачи", text: $item.title, axis: .vertical).accessibilityIdentifier("task-title")
+                LabeledContent("Хранилище", value: item.source.rawValue)
                 Toggle("Указать срок", isOn: $timed)
                 if timed {
                     DatePicker("Срок", selection: $date)
@@ -350,6 +372,9 @@ private struct ReminderEditor: View {
                     }
                     if item.recurrence != .once {
                         Text("После выполнения появится следующий срок. Пропущенная задача остаётся просроченной до выполнения.").font(.footnote)
+                        let zone = original.recurrence == item.recurrence && original.dueAt == date
+                            ? (item.seriesTimeZone ?? TimeZone.current.identifier) : TimeZone.current.identifier
+                        Text("Часовой пояс серии: \(zone)").font(.footnote)
                     }
                     Toggle("Уведомить", isOn: $item.notificationEnabled)
                 }
@@ -359,9 +384,20 @@ private struct ReminderEditor: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Сохранить") { Task { await submit() } }
+                    Button("Сохранить") {
+                        if existing && original.recurrence != .once &&
+                            (!timed || original.dueAt != date || original.recurrence != item.recurrence) {
+                            confirmSeries = true
+                        } else { Task { await submit() } }
+                    }
                         .disabled(saving || item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+            }
+            .confirmationDialog("Изменить расписание всей серии?", isPresented: $confirmSeries, titleVisibility: .visible) {
+                Button("Изменить серию") { Task { await submit() } }
+                Button("Отмена", role: .cancel) {}
+            } message: {
+                Text("Для переноса только текущего напоминания выберите «Отложить» в списке задач.")
             }
         }
     }
@@ -372,14 +408,18 @@ private struct ReminderEditor: View {
         defer { saving = false }
         var value = item
         value.title = value.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !timed || value.dueAt != date { value.snoozedUntil = nil }
-        value.dueAt = timed ? date : nil
+        let newDue = timed ? date : nil
+        if value.dueAt != newDue { value.snoozedUntil = nil }
+        value.dueAt = newDue
         if !timed { value.notificationEnabled = false; value.recurrence = .once }
+        if value.recurrence != .once && value.seriesTimeZone == nil {
+            value.seriesTimeZone = TimeZone.current.identifier
+        }
         value.updatedAt = Date()
         value.revision += 1
         do {
             try save(value, existing)
-            if value.notificationEnabled {
+            if value.notificationEnabled && NoticeDelivery.enabled {
                 let center = UNUserNotificationCenter.current()
                 let settings = await center.notificationSettings()
                 if settings.authorizationStatus == .notDetermined {

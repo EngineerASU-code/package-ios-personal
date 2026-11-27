@@ -5,17 +5,19 @@ import Foundation
 import XCTest
 
 final class WidgetProviderTests: XCTestCase {
-    @MainActor func testAccessoryLayoutsRenderOnSimulator() throws {
+    @MainActor func testAccessoryLayoutsRenderOnSimulator() async throws {
         for hero in [Hero.jinwoo, .maomao] {
             var state = Companion()
             state.hero = hero
-            let scene = WidgetScene(entry: Entry(date: Date(), state: state, settings: Settings()))
             for (family, name, width, height) in [
                 (WidgetFamily.accessoryCircular, "circle", 52, 52),
                 (.accessoryInline, "inline", 180, 26),
                 (.accessoryRectangular, "rectangle", 160, 62)
             ] {
-                let content = scene.accessory(family)
+                let entry = await Entry(date: Date(), state: state, settings: Settings()).prepared(for: family)
+                let content = WidgetAccessory(entry: entry, size: family)
+                    .environment(\.preparedArtwork, entry.artwork)
+                    .environment(\.scenePack, entry.pack)
                     .frame(width: CGFloat(width), height: CGFloat(height))
                     .foregroundStyle(.white).background(.black)
                 let renderer = ImageRenderer(content: content)
@@ -30,7 +32,7 @@ final class WidgetProviderTests: XCTestCase {
         }
     }
 
-    @MainActor func testSixHeroesRenderThreeBundledBackdropsOnSimulator() throws {
+    @MainActor func testSixHeroesRenderThreeBundledBackdropsOnSimulator() async throws {
         let variants = [(hour: 6, file: "scene.jpg"), (hour: 13, file: "scene-day.jpg"),
                         (hour: 23, file: "scene-night.jpg")]
         let calendar = Calendar.current
@@ -52,7 +54,11 @@ final class WidgetProviderTests: XCTestCase {
 
                 let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 2,
                                                                             day: 9, hour: variant.hour)))
+                let request = ArtworkRequest.backdrop(hero, date: date, mode: .normal, schedule: DaySchedule())
+                let prepared = await ArtworkDecoder.shared.images(for: [request])
+                XCTAssertNotNil(prepared[request], path)
                 let backdrop = HeroBackdrop(hero: hero, date: date, mode: .normal)
+                    .environment(\.preparedArtwork, prepared)
                     .frame(width: tile.width, height: tile.height)
                 let renderer = ImageRenderer(content: backdrop)
                 renderer.scale = 1

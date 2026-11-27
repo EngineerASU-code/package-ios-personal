@@ -20,19 +20,19 @@ struct Store {
 
     #endif
 
-    private func withDB<T>(writing: Bool, _ body: (OpaquePointer) throws -> T) throws -> T {
+    private func withDB<T>(flags: Int32, _ body: (OpaquePointer) throws -> T) throws -> T {
         var connection: OpaquePointer?
-        let flags = writing ? SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE : SQLITE_OPEN_READONLY
         let result = sqlite3_open_v2(url.path, &connection, flags, nil)
         defer { sqlite3_close(connection) }
-        if !writing && result == SQLITE_CANTOPEN {
+        let creating = flags & SQLITE_OPEN_CREATE != 0
+        if !creating && result == SQLITE_CANTOPEN {
             // SQLite also returns CANTOPEN for permissions and inaccessible paths.
             // Only a confirmed missing file is a first launch.
             _ = try FileManager.default.attributesOfItem(atPath: url.path)
         }
         guard result == SQLITE_OK, let db = connection else { throw StoreError.database }
         sqlite3_busy_timeout(db, 250)
-        if writing {
+        if creating {
             try execute(db, "CREATE TABLE IF NOT EXISTS snapshot(id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL, body BLOB NOT NULL)")
         }
         return try body(db)
@@ -55,7 +55,7 @@ struct Store {
     }
 
     func readIfPresent() throws -> Companion? {
-        do { return try withDB(writing: false) { try read($0) } }
+        do { return try withDB(flags: SQLITE_OPEN_READONLY) { try read($0) } }
         catch let failure as NSError where failure.domain == NSCocoaErrorDomain && failure.code == NSFileReadNoSuchFileError {
             return nil
         }
@@ -66,11 +66,34 @@ struct Store {
     }
 
     @discardableResult func update(_ change: (inout Companion) -> Void) throws -> Companion {
-        try withDB(writing: true) { db in
+        guard let value = try mutate(creating: true, { state in
+            change(&state)
+            return true
+        }) else { throw StoreError.database }
+        return value
+    }
+
+    @discardableResult func updateIfPresent(_ change: (inout Companion) -> Bool) throws -> Companion? {
+        do { return try mutate(creating: false, change) }
+        catch let failure as NSError where failure.domain == NSCocoaErrorDomain && failure.code == NSFileReadNoSuchFileError {
+            return nil
+        }
+    }
+
+    private func mutate(creating: Bool, _ change: (inout Companion) -> Bool) throws -> Companion? {
+        var flags = SQLITE_OPEN_READWRITE
+        if creating {
+            flags |= SQLITE_OPEN_CREATE
+            #if os(iOS)
+            flags |= SQLITE_OPEN_FILEPROTECTION_COMPLETEUNTILFIRSTUSERAUTHENTICATION
+            #endif
+        }
+        return try withDB(flags: flags) { db in
             try execute(db, "BEGIN IMMEDIATE")
             defer { if sqlite3_get_autocommit(db) == 0 { _ = sqlite3_exec(db, "ROLLBACK", nil, nil, nil) } }
-            var value = try read(db) ?? Companion()
-            change(&value)
+            let saved = try read(db)
+            guard var value = saved ?? (creating ? Companion() : nil) else { return nil }
+            guard change(&value) else { return saved }
             let data = try JSONEncoder().encode(value)
             var stmt: OpaquePointer?
             defer { sqlite3_finalize(stmt) }

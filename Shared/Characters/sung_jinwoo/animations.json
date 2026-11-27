@@ -1,5 +1,36 @@
 {
-  "transition": "static",
+  "transitions": [
+    {
+      "id": "portal",
+      "surfaces": [
+        "app",
+        "widgetMedium"
+      ],
+      "from": "left",
+      "to": "right",
+      "duration": 1.4,
+      "assets": [
+        "chibi.png"
+      ],
+      "fallback": "staticPose",
+      "motion": "full"
+    },
+    {
+      "id": "summon",
+      "surfaces": [
+        "widgetLarge"
+      ],
+      "from": "idle",
+      "to": "summoned",
+      "duration": 1.4,
+      "assets": [
+        "chibi.png",
+        "igris.png"
+      ],
+      "fallback": "staticPose",
+      "motion": "full"
+    }
+  ],
   "fallback": "systemSymbol",
   "states": {
     "neutral": {

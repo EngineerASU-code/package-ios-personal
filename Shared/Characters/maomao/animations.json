@@ -1,5 +1,23 @@
 {
-  "transition": "static",
+  "transitions": [
+    {
+      "id": "portal",
+      "surfaces": [
+        "app",
+        "widgetMedium",
+        "widgetLarge"
+      ],
+      "from": "left",
+      "to": "right",
+      "duration": 1.4,
+      "assets": [
+        "chibi.png",
+        "portal-leaf.png"
+      ],
+      "fallback": "staticPose",
+      "motion": "full"
+    }
+  ],
   "fallback": "systemSymbol",
   "states": {
     "neutral": {

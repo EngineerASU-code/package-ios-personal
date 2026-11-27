@@ -1,5 +1,25 @@
 {
-  "transition": "static",
+  "transitions": [
+    {
+      "id": "gaze",
+      "surfaces": [
+        "app",
+        "widgetMedium",
+        "widgetLarge"
+      ],
+      "from": "blindfold",
+      "to": "smirk",
+      "duration": 1.4,
+      "assets": [
+        "chibi.png",
+        "blindfold-touch.png",
+        "blindfold-gaze.png",
+        "blindfold-smirk.png"
+      ],
+      "fallback": "staticPose",
+      "motion": "full"
+    }
+  ],
   "fallback": "systemSymbol",
   "states": {
     "neutral": {

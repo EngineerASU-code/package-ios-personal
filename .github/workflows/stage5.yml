@@ -20,12 +20,21 @@ jobs:
           mkdir -p evidence
           xcodebuild -version | tee evidence/xcode.txt
           xcrun simctl list devices available -j > evidence/devices.json
-          device=$(python3 -c 'import json; d=json.load(open("evidence/devices.json"))["devices"]; print(next(v["udid"] for k in sorted(d,reverse=True) if k.endswith(".iOS-18-5") for v in d[k] if v["name"] == "iPhone 16"))')
+          uname -s > evidence/host.txt
+          sw_vers >> evidence/host.txt
+          xcrun simctl list devicetypes -j > evidence/device-types.json
+          xcodebuild -showsdks > evidence/sdks.txt
+          xcrun simctl list runtimes -j > evidence/runtimes.json
+          device=$(python3 Scripts/select_simulator.py evidence/devices.json evidence/destination.json)
+          cat evidence/destination.json
           echo "DEVICE=$device" >> "$GITHUB_ENV"
-          xcrun simctl boot "$device"
+          if ! python3 -c 'import json, sys; sys.exit(json.load(open("evidence/destination.json"))["state"] != "Booted")'; then
+            xcrun simctl boot "$device"
+          fi
           xcrun simctl bootstatus "$device" -b
           gem list -i xcodeproj || gem install xcodeproj --user-install --no-document
           ruby Scripts/stage5/prepare.rb
+          xcodebuild -project MyCompanion.xcodeproj -scheme Stage5 -showdestinations > evidence/destinations.txt
       - name: Exercise installed widget on Home Screen
         run: |
           xcrun simctl io "$DEVICE" screenshot evidence/booted.png

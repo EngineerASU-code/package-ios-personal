@@ -1,6 +1,14 @@
 import SwiftUI
 import UserNotifications
 
+@MainActor final class NotificationNavigation: ObservableObject {
+    enum Destination: Equatable {
+        case calendar, reminders, gift(String)
+    }
+    static let shared = NotificationNavigation()
+    @Published var pending: Destination?
+}
+
 final class NotificationActions: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -15,12 +23,24 @@ final class NotificationActions: NSObject, UIApplicationDelegate, UNUserNotifica
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .list]
+        NoticeDelivery.enabled ? [.banner, .list] : []
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse) async {
         let content = response.notification.request.content
+        if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            let id = response.notification.request.identifier
+            let destination: NotificationNavigation.Destination
+            if id.hasPrefix("companion.calendar.") { destination = .calendar }
+            else if content.categoryIdentifier == "MYCOMPANION_TASK" { destination = .reminders }
+            else if content.categoryIdentifier == "companion.gift", id.hasPrefix("companion.gift.") {
+                destination = .gift(String(id.dropFirst("companion.gift.".count)))
+            }
+            else { return }
+            await MainActor.run { NotificationNavigation.shared.pending = destination }
+            return
+        }
         guard content.categoryIdentifier == "MYCOMPANION_TASK",
               let rawID = content.userInfo["taskID"] as? String,
               let id = UUID(uuidString: rawID),
