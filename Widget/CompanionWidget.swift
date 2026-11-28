@@ -53,12 +53,6 @@ struct Settings: WidgetConfigurationIntent {
     }
 }
 
-private func widgetMode(for preference: CompanionMode, process: ProcessInfo = .processInfo) -> CompanionMode {
-    if preference != .paused && process.thermalState == .critical { return .safe }
-    if preference == .normal && (process.isLowPowerModeEnabled || process.thermalState == .serious) { return .eco }
-    return preference
-}
-
 private let widgetPerformance = OSSignposter(subsystem: "local.mycompanion.widget", category: "Performance")
 
 struct React: AppIntent {
@@ -77,7 +71,7 @@ struct React: AppIntent {
             let primary = state.hero
             guard !follows || primary == target else { return false }
             let preference = state.mode
-            let effective = widgetMode(for: preference)
+            let effective = preference.effective()
             guard effective == .normal || effective == .eco else { return false }
             state.mode = effective
             state.hero = target
@@ -99,6 +93,7 @@ struct Entry: TimelineEntry {
     var retryAfterCooling = false
     var pack: CharacterPack? = nil
     var artwork: [ArtworkRequest: UIImage] = [:]
+    var nightScreenTimeAt: Date? = nil
 
     func prepared(for family: WidgetFamily) async -> Self {
         guard available else { return self }
@@ -119,7 +114,8 @@ struct Entry: TimelineEntry {
         if !compact {
             requests.insert(.backdrop(hero, date: date, mode: state.mode, schedule: state.daySchedule))
             if state.mode == .normal && state.animationsEnabled && settings.form == .chibi && family != .systemSmall,
-               let descriptor = result.pack?.animations[family == .systemLarge ? .widgetLarge : .widgetMedium] {
+               let descriptor = result.pack?.animation(for: family == .systemLarge ? .widgetLarge : .widgetMedium,
+                                                       reactionID: line.id) {
                 let contactVisible = state.contact.map { $0.response == line.id } ?? false
                 let layeredRest = line.emotion == .neutral && (descriptor.id == .spirit || descriptor.id == .expression)
                 if contactVisible || descriptor.id == .portal || layeredRest {
@@ -139,7 +135,7 @@ struct Provider: AppIntentTimelineProvider {
     }
 
     func current(_ configuration: Settings, store: () throws -> Store = Store.shared,
-                 effectiveMode: (CompanionMode) -> CompanionMode = { widgetMode(for: $0) },
+                 effectiveMode: (CompanionMode) -> CompanionMode = { $0.effective() },
                  hasResources: ((Hero) -> Bool)? = nil) -> Entry {
         do {
             guard var state = try store().readIfPresent() else { throw StoreError.unavailable }
@@ -159,9 +155,11 @@ struct Provider: AppIntentTimelineProvider {
             } else {
                 state.reminders.removeAll()
             }
+            let nightScreenTimeAt = ScreenTimePolicy.nightEvent(at: now)?.date
             return Entry(date: now, state: state, settings: configuration,
-                         display: DayTimeline.display(state, at: now, calendar: .current, showsTask: configuration.showsTask, channel: "widget", using: pack),
-                         retryAfterCooling: state.mode == .safe && (preference == .normal || preference == .eco), pack: pack)
+                         display: DayTimeline.display(state, at: now, calendar: .current, showsTask: configuration.showsTask, channel: "widget", using: pack, nightScreenTimeAt: nightScreenTimeAt),
+                         retryAfterCooling: state.mode == .safe && (preference == .normal || preference == .eco), pack: pack,
+                         nightScreenTimeAt: nightScreenTimeAt)
         } catch {
             return Entry(date: Date(), state: Companion(), settings: configuration, available: false)
         }
@@ -187,6 +185,13 @@ struct Provider: AppIntentTimelineProvider {
         }
         let calendar = Calendar.current
         var scheduled = Set(DayTimeline.dates(from: first.date, state: first.state, calendar: calendar))
+        if let event = first.nightScreenTimeAt {
+            let expiry = event.addingTimeInterval(DayTimeline.bedtimeReactionDuration)
+            if expiry > first.date { scheduled.insert(expiry) }
+        }
+        if let weather = first.state.sceneWeather, weather.isSunny(at: first.date) {
+            scheduled.insert(weather.expiry)
+        }
         let snapshot = first.state.calendarSnapshot
         if let expiry = snapshot.expiry, snapshot.isFresh(at: first.date) {
             scheduled.insert(expiry)
@@ -203,7 +208,7 @@ struct Provider: AppIntentTimelineProvider {
             var state = first.state
             if !snapshot.isFresh(at: date) { state.calendarSnapshot = CalendarSnapshot() }
             let entry = Entry(date: date, state: state, settings: configuration,
-                              display: DayTimeline.display(state, at: date, calendar: calendar, showsTask: configuration.showsTask, channel: "widget", using: first.pack),
+                              display: DayTimeline.display(state, at: date, calendar: calendar, showsTask: configuration.showsTask, channel: "widget", using: first.pack, nightScreenTimeAt: first.nightScreenTimeAt),
                               pack: first.pack)
             entries.append(await entry.prepared(for: context.family))
         }
@@ -242,9 +247,13 @@ struct WidgetAccessory: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.state.hero.name).font(.headline).lineLimit(1)
-                    Text(speech.isEmpty ? line.action : (entry.pack?.byID[line.id]?.shortText ?? speech))
-                        .font(.caption).lineLimit(2)
-                        .accessibilityLabel(Text(speech.isEmpty ? line.action : speech))
+                    ViewThatFits(in: .vertical) {
+                        Text(speech.isEmpty ? line.action : (entry.pack?.byID[line.id]?.shortText ?? speech))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(line.action).lineLimit(2)
+                    }
+                    .font(.caption)
+                    .accessibilityLabel(Text(speech.isEmpty ? line.action : speech))
                 }
             }
         default: EmptyView()
@@ -253,32 +262,47 @@ struct WidgetAccessory: View {
 }
 
 struct WidgetScene: View {
-    @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetFamily) private var systemFamily
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     let entry: Entry
+    private let familyOverride: WidgetFamily?
+    private var family: WidgetFamily { familyOverride ?? systemFamily }
+
+    init(entry: Entry, family: WidgetFamily? = nil) {
+        self.entry = entry
+        familyOverride = family
+    }
     private var line: Reaction { entry.display ?? Reaction("idle", "", "Отдыхает") }
     private var speech: String { entry.settings.showsSpeech ? line.text : "" }
     private var animates: Bool {
         entry.available && entry.state.animationsEnabled && !reduceMotion && entry.state.mode == .normal
     }
 
+    private var allowsConversation: Bool {
+        entry.state.mode == .normal || entry.state.mode == .eco
+    }
+
+    private var showsMortar: Bool {
+        entry.state.hero == .maomao && entry.state.mode == .normal && entry.pack?.byID[line.id]?.behaviorID == "mortar"
+    }
+
     private var characterFigure: CompanionFigure {
         CompanionFigure(hero: entry.state.hero, portrait: entry.settings.form == .portrait,
-                               emotion: line.emotion, daytimePose: line.daytimePose)
+                        emotion: line.emotion, daytimePose: line.daytimePose, apothecaryMortar: showsMortar)
     }
 
     private var descriptor: CharacterPack.AnimationDescriptor? {
         guard animates, !typeSize.isAccessibilitySize, entry.settings.form == .chibi else { return nil }
         switch family {
-        case .systemMedium: return entry.pack?.animations[.widgetMedium]
-        case .systemLarge: return entry.pack?.animations[.widgetLarge]
+        case .systemMedium: return entry.pack?.animation(for: .widgetMedium, reactionID: line.id)
+        case .systemLarge: return entry.pack?.animation(for: .widgetLarge, reactionID: line.id)
         default: return nil
         }
     }
 
     @ViewBuilder private var homeFigure: some View {
-        if entry.settings.form == .chibi && entry.state.hero == .maomao && family == .systemSmall {
+        if entry.settings.form == .chibi && entry.state.hero == .maomao && family == .systemSmall && !showsMortar {
             characterFigure.aspectRatio(1, contentMode: .fit).scaleEffect(1.42, anchor: .top).clipped()
         } else {
             CharacterActionFigure(figure: characterFigure, descriptor: descriptor,
@@ -292,7 +316,7 @@ struct WidgetScene: View {
     private var figure: some View {
         let summon = descriptor?.id == .summon
         return homeFigure
-            .frame(maxWidth: family == .systemSmall ? 110 : (summon ? 190 : (family == .systemLarge ? 172 : 124)),
+            .frame(maxWidth: family == .systemSmall ? 110 : (summon ? ShadowSummonLayout.preferredGroupWidth : (family == .systemLarge ? 172 : 124)),
                    maxHeight: family == .systemSmall ? 90 : (family == .systemLarge ? 190 : 126))
             .shadow(color: .black.opacity(0.42), radius: 3, y: 2)
             .transition(.opacity)
@@ -398,20 +422,24 @@ struct WidgetScene: View {
                     Label("Откройте Мой Компаньон", systemImage: "moon.stars")
                 }
             }
-            else if family == .accessoryInline || entry.state.mode == .safe || entry.state.mode == .paused { scene }
             else if family == .systemLarge {
                 VStack(spacing: 4) {
-                    Button(intent: React(hero: entry.state.hero, follows: entry.settings.selection == .followPrimary)) { scene }
-                        .buttonStyle(.plain)
+                    if allowsConversation {
+                        Button(intent: React(hero: entry.state.hero, follows: entry.settings.selection == .followPrimary)) { scene }
+                            .buttonStyle(.plain)
+                    } else { scene }
                     HStack(spacing: 4) {
                         Link(destination: URL(string: "mycompanion://calendar")!) { actionLabel("Календарь", "calendar") }
-                        Button(intent: React(hero: entry.state.hero, follows: entry.settings.selection == .followPrimary)) {
-                            actionLabel("Поговорить", "bubble.left")
-                        }.buttonStyle(.plain)
+                        if allowsConversation {
+                            Button(intent: React(hero: entry.state.hero, follows: entry.settings.selection == .followPrimary)) {
+                                actionLabel("Поговорить", "bubble.left")
+                            }.buttonStyle(.plain)
+                        }
                         Link(destination: URL(string: "mycompanion://reminders")!) { actionLabel("Задачи", "checklist") }
                     }
                 }
             }
+            else if family == .accessoryInline || !allowsConversation { scene }
             else {
                 Button(intent: React(hero: entry.state.hero, follows: entry.settings.selection == .followPrimary)) { scene }
                     .buttonStyle(.plain).accessibilityHint("Новая реакция персонажа")
@@ -422,6 +450,8 @@ struct WidgetScene: View {
             if entry.available && [.systemSmall, .systemMedium, .systemLarge].contains(family) {
                 HeroBackdrop(hero: entry.state.hero, date: entry.date, mode: entry.state.mode,
                              daySchedule: entry.state.daySchedule)
+                    .environment(\.preparedArtwork, entry.artwork)
+                    .environment(\.scenePack, entry.pack)
             } else { Color.clear }
         }.environment(\.preparedArtwork, entry.artwork)
             .environment(\.scenePack, entry.pack)

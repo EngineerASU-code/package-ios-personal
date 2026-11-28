@@ -10,6 +10,7 @@ private struct NoticePreferences: Equatable {
     var support, gifts, enabled: Bool
     var schedule: DaySchedule
     var intensity: CommunicationIntensity
+    var sarcasm: SukunaSarcasm
 }
 
 enum NoticeDelivery {
@@ -33,6 +34,62 @@ enum NoticeDelivery {
                 $0.hasPrefix("companion.calendar.") || CompanionNoticeSlot.owns($0)
         }
         center.removePendingNotificationRequests(withIdentifiers: ids)
+    }
+}
+
+@MainActor enum GiftNoticeArtwork {
+    static let attachmentID = "companion.gift.illustration"
+
+    static func make(for find: Find) -> (attachment: UNNotificationAttachment, directory: URL)? {
+        guard find.id == ApothecaryMortar.findID else { return make(symbol: find.assetID) }
+        let renderer = ImageRenderer(content:
+            ApothecaryMortar()
+                .frame(width: 112, height: 112)
+                .frame(width: 128, height: 128)
+                .background(Color(red: 0.12, green: 0.18, blue: 0.17))
+        )
+        renderer.scale = 1
+        guard let data = renderer.uiImage?.pngData() else { return nil }
+        return attachment(from: data)
+    }
+
+    static func make(symbol: String) -> (attachment: UNNotificationAttachment, directory: URL)? {
+        let configuration = UIImage.SymbolConfiguration(pointSize: 68, weight: .semibold)
+        guard let image = UIImage(systemName: symbol, withConfiguration: configuration) else { return nil }
+        let size = CGSize(width: 128, height: 128)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let thumbnail = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(red: 0.12, green: 0.18, blue: 0.17, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            let scale = 84 / max(image.size.width, image.size.height)
+            let width = image.size.width * scale
+            let height = image.size.height * scale
+            image.withTintColor(UIColor(red: 0.87, green: 0.93, blue: 0.78, alpha: 1),
+                                renderingMode: .alwaysOriginal)
+                .draw(in: CGRect(x: (size.width - width) / 2, y: (size.height - height) / 2,
+                                 width: width, height: height))
+        }
+        guard let png = thumbnail.pngData() else { return nil }
+        return attachment(from: png)
+    }
+
+    private static func attachment(from png: Data) -> (attachment: UNNotificationAttachment, directory: URL)? {
+        let manager = FileManager.default
+        let directory = manager.temporaryDirectory.appendingPathComponent("companion-gift-" + UUID().uuidString,
+                                                                          isDirectory: true)
+        do {
+            try manager.createDirectory(at: directory, withIntermediateDirectories: false)
+        } catch { return nil }
+        do {
+            let file = directory.appendingPathComponent("gift.png")
+            try png.write(to: file, options: .atomic)
+            return (try UNNotificationAttachment(identifier: attachmentID, url: file), directory)
+        } catch {
+            try? manager.removeItem(at: directory)
+            return nil
+        }
     }
 }
 
@@ -82,9 +139,12 @@ extension Notification.Name {
         quietStart: defaults.object(forKey: "quietStartHour") as? Int ?? 23,
         quietEnd: defaults.object(forKey: "quietEndHour") as? Int ?? 7,
         support: defaults.bool(forKey: "companionSupportEnabled"), gifts: defaults.bool(forKey: "companionGiftsEnabled"),
-        enabled: NoticeDelivery.enabled, schedule: state.daySchedule, intensity: state.communicationIntensity
+        enabled: NoticeDelivery.enabled, schedule: state.daySchedule, intensity: state.communicationIntensity, sarcasm: state.sukunaSarcasm
     )
-    await CompanionNotices.shared.update(hero: state.hero, mode: state.mode, settings: settings)
+    ScreenTimePolicy.sync(hero: state.hero, mode: state.mode.effective(), schedule: state.daySchedule,
+                          notifications: settings.enabled, quietStart: settings.quietStart, quietEnd: settings.quietEnd,
+                          nightNotifications: defaults.bool(forKey: "screenTimeNightNotifications"))
+    await CompanionNotices.shared.update(hero: state.hero, mode: state.mode.effective(), settings: settings)
 }
 
 struct PauseCompanionIntent: AppIntent {
@@ -143,6 +203,7 @@ struct ResumeCompanionIntent: AppIntent {
         plan.support = settings.support
         plan.daySchedule = settings.schedule
         plan.communicationIntensity = settings.intensity
+        plan.sukunaSarcasm = settings.sarcasm
         if active && settings.gifts, let state = try? Store.shared().read(), state.hero == hero {
             let finds = Set(hero.pack?.finds.map(\.id) ?? [])
             plan.gift = state.unlocks.filter { finds.contains($0.id) }.max { $0.date < $1.date }
@@ -217,11 +278,24 @@ struct ResumeCompanionIntent: AppIntent {
                     content.title = title
                     content.body = slot.body
                     content.categoryIdentifier = slot.category
+                    let giftID = String(slot.id.dropFirst("companion.gift.".count))
+                    let artwork = slot.category == "companion.gift"
+                        ? hero.pack?.finds.first { $0.id == giftID }.flatMap { GiftNoticeArtwork.make(for: $0) }
+                        : nil
+                    if let artwork { content.attachments = [artwork.attachment] }
+                    defer {
+                        if let artwork { try? FileManager.default.removeItem(at: artwork.directory) }
+                    }
                     var parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: slot.date)
                     parts.timeZone = calendar.timeZone
                     let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
                     do {
-                        try await NoticeDelivery.add(UNNotificationRequest(identifier: slot.id, content: content, trigger: trigger), to: center)
+                        do {
+                            try await NoticeDelivery.add(UNNotificationRequest(identifier: slot.id, content: content, trigger: trigger), to: center)
+                        } catch where artwork != nil && !(error is CancellationError) {
+                            content.attachments = []
+                            try await NoticeDelivery.add(UNNotificationRequest(identifier: slot.id, content: content, trigger: trigger), to: center)
+                        }
                     } catch {
                         journal.current.ledger.entries[slot.id] = previous
                         try journal.persist()
@@ -247,6 +321,7 @@ private struct NoticeReconciliation: ViewModifier {
     let schedule: DaySchedule
     let latestUnlock: String?
     let intensity: CommunicationIntensity
+    let sarcasm: SukunaSarcasm
     @Environment(\.scenePhase) private var phase
     @AppStorage("companionMorningEnabled") private var morning = false
     @AppStorage("companionBedtimeEnabled") private var bedtime = false
@@ -257,13 +332,19 @@ private struct NoticeReconciliation: ViewModifier {
     @AppStorage("companionBedtimeTime") private var bedtimeTime = 1365
     @AppStorage("quietStartHour") private var quietStart = 23
     @AppStorage("quietEndHour") private var quietEnd = 7
+    @AppStorage("screenTimeNightNotifications") private var screenTimeNightNotifications = false
 
     func body(content: Content) -> some View {
         let preferences = NoticePreferences(morning: morning, bedtime: bedtime, morningTime: morningTime,
                                            bedtimeTime: bedtimeTime, quietStart: quietStart, quietEnd: quietEnd,
-                                           support: support, gifts: gifts, enabled: enabled, schedule: schedule, intensity: intensity)
+                                           support: support, gifts: gifts, enabled: enabled, schedule: schedule, intensity: intensity, sarcasm: sarcasm)
         let refresh = {
-            Task { @MainActor in await CompanionNotices.shared.update(hero: hero, mode: mode, settings: preferences) }
+            Task { @MainActor in
+                ScreenTimePolicy.sync(hero: hero, mode: mode, schedule: schedule, notifications: preferences.enabled,
+                                      quietStart: preferences.quietStart, quietEnd: preferences.quietEnd,
+                                      nightNotifications: screenTimeNightNotifications)
+                await CompanionNotices.shared.update(hero: hero, mode: mode, settings: preferences)
+            }
         }
         return content.onAppear { _ = refresh() }
             .onChange(of: enabled) { _, _ in Task { _ = await ReminderNotifications.shared.reconcile() } }
@@ -271,6 +352,7 @@ private struct NoticeReconciliation: ViewModifier {
             .onChange(of: preferences) { _, _ in _ = refresh() }
             .onChange(of: hero) { _, _ in _ = refresh() }
             .onChange(of: mode) { _, _ in _ = refresh() }
+            .onChange(of: screenTimeNightNotifications) { _, _ in _ = refresh() }
             .onChange(of: latestUnlock) { _, _ in if gifts { _ = refresh() } }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in _ = refresh() }
     }
@@ -278,8 +360,8 @@ private struct NoticeReconciliation: ViewModifier {
 
 extension View {
     func companionNoticeReconciliation(hero: Hero, mode: CompanionMode, schedule: DaySchedule, latestUnlock: String?,
-                                      intensity: CommunicationIntensity) -> some View {
-        modifier(NoticeReconciliation(hero: hero, mode: mode, schedule: schedule, latestUnlock: latestUnlock, intensity: intensity))
+                                      intensity: CommunicationIntensity, sarcasm: SukunaSarcasm) -> some View {
+        modifier(NoticeReconciliation(hero: hero, mode: mode, schedule: schedule, latestUnlock: latestUnlock, intensity: intensity, sarcasm: sarcasm))
     }
 }
 

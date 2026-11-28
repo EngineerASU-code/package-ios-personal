@@ -319,7 +319,7 @@ struct CalendarPanel: View {
                         }
                         ForEach(items) { item in
                             VStack(alignment: .leading) {
-                                Text(item.label)
+                                Text(titles ? item.label : "Событие").privacySensitive()
                                 Text("\(item.start.formatted(date: .abbreviated, time: .omitted)) · \(item.timeLabel)").font(.caption)
                             }
                         }

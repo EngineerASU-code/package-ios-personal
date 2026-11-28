@@ -1,5 +1,20 @@
 import Foundation
 
+struct SceneWeather: Codable, Equatable {
+    let isSunny: Bool
+    let observedAt: Date
+
+    var expiry: Date { observedAt.addingTimeInterval(90 * 60) }
+
+    func isFresh(at date: Date) -> Bool {
+        date >= observedAt && date < expiry
+    }
+
+    func isSunny(at date: Date) -> Bool {
+        isSunny && isFresh(at: date)
+    }
+}
+
 struct DaySchedule: Codable, Equatable {
     var lateNight = 0
     var dawn = 5
@@ -62,6 +77,7 @@ extension Hero {
 }
 
 enum DayTimeline {
+    static let bedtimeReactionDuration: TimeInterval = 20 * 60
     // A single scheduled entry releases the response even between hourly slots.
     static func responseEnd(_ state: Companion) -> Date? {
         guard let tap = state.contact, tap.hero == state.hero else { return nil }
@@ -106,17 +122,23 @@ enum DayTimeline {
     }
 
     static func display(_ state: Companion, at date: Date, calendar: Calendar, showsTask: Bool = true,
-                        channel: String = "app", using pack: CharacterPack?) -> Reaction {
+                        channel: String = "app", using pack: CharacterPack?, nightScreenTimeAt: Date? = nil) -> Reaction {
         let allowCompliments = state.allowsCompliments(on: channel)
         let current = state.reaction(using: pack)
         let hidden = pack?.byID[current.id].map {
-            (!allowCompliments && $0.category == "compliment") || !state.communicationIntensity.permits($0, channel: channel) ||
+            (!allowCompliments && $0.category == "compliment") || !state.sukunaSarcasm.permits($0) ||
+                !state.communicationIntensity.permits($0, channel: channel) ||
                 ($0.category == "calendar" && !state.calendarSnapshot.isFresh(at: date))
         } ?? false
         guard state.mode == .normal || state.mode == .eco else {
             return hidden ? Reaction("idle", "Я здесь.", "Отдыхает") : current
         }
         let period = state.daySchedule.period(at: date, calendar: calendar)
+        let night = period == .night || period == .lateNight
+        if night, let event = nightScreenTimeAt, date >= event, date.timeIntervalSince(event) < bedtimeReactionDuration,
+           let text = pack?.personality.bedtimeLine {
+            return Reaction("context-bedtime", text, "Хмурится", emotion: .frowning)
+        }
         if !hidden, let tap = state.contact, tap.hero == state.hero, date >= tap.date,
            let end = responseEnd(state), date < end,
            pack?.byID[tap.response]?.allows(period) != false,
@@ -126,7 +148,7 @@ enum DayTimeline {
         let slot = Int(floor(date.timeIntervalSince1970 / (state.mode == .eco ? 7200 : 3600)))
         let seed = state.hero.rawValue.utf8.reduce(0) { $0 + Int($1) }
 
-        if period == .night || period == .lateNight {
+        if night {
             let action = period == .night ? "Готовится ко сну" : "Спит"
             return Reaction("sleep", "", "\(period.caption) · \(action)", emotion: .sleepy)
         }
@@ -153,17 +175,22 @@ enum DayTimeline {
             let frequency = state.passivePhraseFrequency
             guard state.randomEventsEnabled, frequency != .off,
                   frequency != .reduced || (slot + seed).isMultiple(of: 2) else { return Reaction("idle", "", period.caption) }
+            if state.sceneWeather?.isSunny(at: date) == true, let text = pack?.personality.sunnyLine {
+                return Reaction("context-sunny", text, "Улыбается", emotion: .happy)
+            }
             let complimentSlot = rotation == 1 && allowCompliments &&
                 (state.complimentFrequency != .reduced || phase.quotient.isMultiple(of: 3))
             (category, trigger) = (complimentSlot ? "compliment" : "day", "randomSlot")
         }
         guard let pack else { return Reaction("idle", "Я здесь.", period.caption) }
         let activity = state.activity(at: date, using: pack)
+        let displayMood = rotation == 0 ? pack.disposition.recovery : activity.mood
         func eligible(_ category: String, trigger: String) -> [CharacterPack.Record] {
             (pack.byTrigger[trigger] ?? []).filter {
-                $0.category == category && state.communicationIntensity.permits($0, channel: channel) &&
+                $0.category == category && state.sukunaSarcasm.permits($0) && state.communicationIntensity.permits($0, channel: channel) &&
                 $0.eligible(trigger: trigger, channel: channel, facts: facts.union([trigger]),
-                                                       mood: activity.mood, intensity: pack.personality.intensity, period: period)
+                                                       mood: category == "day" ? displayMood : activity.mood,
+                                                       intensity: pack.personality.intensity, period: period)
             }
         }
         var choices = eligible(category, trigger: trigger)
@@ -193,7 +220,7 @@ enum DayTimeline {
         let action = row.behaviorID.flatMap { pack.behaviors[$0]?.label } ?? line.action
         var emotion = line.emotion
         if row.category == "day" {
-            emotion = pack.disposition.expression(for: rotation == 0 ? pack.disposition.recovery : activity.mood)
+            emotion = pack.disposition.expression(for: displayMood)
         }
         var result = Reaction(line.id, line.text, "\(period.caption) · \(action)", emotion: emotion)
         result.daytimePose = state.hero != .gojo && (emotion == .surprised || emotion == .happy)

@@ -176,30 +176,32 @@ actor ReminderNotifications {
                 return revisions[request.identifier] == request.content.userInfo["revision"] as? Int ? nil : request.identifier
             })
             var failures = 0
+            var triggerCalendar = Calendar(identifier: .gregorian)
+            triggerCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+            func matches(_ request: UNNotificationRequest, task: LocalReminder, date: Date) -> Bool {
+                guard let fire = (request.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() else { return false }
+                return request.identifier == prefix + task.id.uuidString &&
+                    request.content.userInfo["occurrence"] as? String == task.occurrenceKey &&
+                    request.content.userInfo["revision"] as? Int == task.revision &&
+                    Int(fire.timeIntervalSince1970) == Int(date.timeIntervalSince1970)
+            }
             for (task, date) in desired {
                 let id = prefix + task.id.uuidString
                 let stamp = Int(date.timeIntervalSince1970)
-                if own.contains(where: { $0.identifier == id && $0.content.userInfo["occurrence"] as? String == task.occurrenceKey &&
-                    $0.content.userInfo["revision"] as? Int == task.revision &&
-                    $0.content.userInfo["fireTime"] as? Int == stamp }) { continue }
+                if own.contains(where: { matches($0, task: task, date: date) }) { continue }
                 let content = UNMutableNotificationContent()
                 content.title = "Мой Компаньон"
                 content.body = "У вас запланирована задача."
                 content.categoryIdentifier = "MYCOMPANION_TASK"
                 content.userInfo = ["taskID": task.id.uuidString, "occurrence": task.occurrenceKey, "revision": task.revision, "fireTime": stamp]
-                let parts = Calendar.current.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: date)
+                let parts = triggerCalendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: date)
                 let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
                 do { try await NoticeDelivery.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger), to: center) }
                 catch { failures += 1 }
             }
             let verified = await center.pendingNotificationRequests().filter { $0.identifier.hasPrefix(prefix) }
             let matchesPlan = desired.allSatisfy { task, date in
-                verified.contains { request in
-                    request.identifier == prefix + task.id.uuidString &&
-                    request.content.userInfo["occurrence"] as? String == task.occurrenceKey &&
-                    request.content.userInfo["revision"] as? Int == task.revision &&
-                    request.content.userInfo["fireTime"] as? Int == Int(date.timeIntervalSince1970)
-                }
+                verified.contains { matches($0, task: task, date: date) }
             }
             if failures > 0 || !matchesPlan || Set(verified.map(\.identifier)) != ids {
                 return "Часть уведомлений не поставлена в очередь. Проверьте разрешение и обновите расписание."

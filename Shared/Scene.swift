@@ -1,6 +1,15 @@
 import SwiftUI
 import ImageIO
 
+extension CompanionMode {
+    func effective(thermal: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState,
+                   lowPower: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled) -> Self {
+        if self != .paused && thermal == .critical { return .safe }
+        if self == .normal && (thermal == .serious || lowPower) { return .eco }
+        return self
+    }
+}
+
 enum CharacterArtwork {
     private static let cache: NSCache<NSString, UIImage> = {
         let result = NSCache<NSString, UIImage>()
@@ -56,7 +65,7 @@ struct ArtworkRequest: Hashable {
     }
 
     static func figure(_ hero: Hero, portrait: Bool, emotion: ChibiEmotion, daytime: Bool, pixels: Int) -> Self {
-        let name = portrait ? "portrait" : (daytime ? "chibi-daytime" : (emotion == .neutral ? "chibi" : "chibi-" + emotion.rawValue))
+        let name = portrait ? "portrait" : (daytime ? "chibi-daytime" : (emotion == .neutral || emotion == .frowning ? "chibi" : "chibi-" + emotion.rawValue))
         return Self(hero: hero, file: name + ".png", pixels: pixels,
                     fallbackFile: !portrait && name != "chibi" ? "chibi.png" : nil)
     }
@@ -179,6 +188,17 @@ private extension CharacterPack.Theme {
     }
 }
 
+struct ShadowSummonLayout {
+    static let preferredGroupWidth: CGFloat = 190
+    let heroWidth: CGFloat
+    let knightSide: CGFloat
+
+    init(size: CGSize) {
+        heroWidth = size.width * 0.58
+        knightSide = min(size.width * 0.49, size.height * 0.80)
+    }
+}
+
 struct ShadowSummon<Figure: View>: View {
     let figure: Figure
     let contact: Date?
@@ -186,16 +206,22 @@ struct ShadowSummon<Figure: View>: View {
 
     var body: some View {
         GeometryReader { geo in
+            let layout = ShadowSummonLayout(size: geo.size)
             ZStack(alignment: .bottomTrailing) {
-                figure.frame(width: geo.size.width * 0.74, height: geo.size.height, alignment: .bottom)
+                let heroWidth = contact == nil ? geo.size.width * 0.74 : layout.heroWidth
+                let heroHeight = contact == nil ? geo.size.height : min(heroWidth, geo.size.height)
+                figure.frame(width: heroWidth, height: heroHeight, alignment: .bottom)
                     .clipped()
                     .frame(width: geo.size.width, alignment: .leading)
-                if let contact {
-                    Color.clear.modifier(ShadowArrival(progress: 1))
-                        .frame(width: geo.size.width * 0.25, height: geo.size.height * 0.45)
-                        .id(contact)
-                        .transition(.asymmetric(insertion: .modifier(active: ShadowArrival(progress: 0), identity: ShadowArrival(progress: 1)), removal: .identity))
+                ZStack {
+                    if let contact {
+                        Color.clear.modifier(ShadowArrival(progress: 1))
+                            .id(contact)
+                            .transition(.asymmetric(insertion: .modifier(active: ShadowArrival(progress: 0), identity: ShadowArrival(progress: 1)), removal: .identity))
+                    }
                 }
+                .frame(width: layout.knightSide, height: layout.knightSide)
+                .clipped()
             }
             .animation(.linear(duration: duration), value: contact)
         }
@@ -215,13 +241,32 @@ private struct ShadowArrival: AnimatableModifier {
             let phase = min(1, max(0, (progress - 0.12) / 0.64))
             let rise = phase * phase * (3 - 2 * phase)
             ZStack(alignment: .bottom) {
+                Ellipse()
+                    .fill(RadialGradient(colors: [Color(red: 0.52, green: 0.29, blue: 0.93).opacity(0.62), .clear],
+                                         center: .center, startRadius: height * 0.12, endRadius: height * 0.55))
+                    .frame(height: height * 0.98)
+                    .opacity(rise)
+                Ellipse().trim(from: 0.06, to: 0.84)
+                    .stroke(Color(red: 0.74, green: 0.55, blue: 1).opacity(0.62),
+                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .rotationEffect(.degrees(-66))
+                    .frame(width: geo.size.width * 0.78, height: height * 0.83)
+                    .padding(.bottom, height * 0.07)
+                    .opacity(rise)
                 Ellipse().fill(Color.black.opacity(0.9))
                     .shadow(color: .purple, radius: 2)
                     .frame(height: height * 0.14)
                     .scaleEffect(x: 0.32 + 0.68 * min(1, progress / 0.20), y: 1)
                     .opacity(min(1, progress / 0.12))
-                CharacterArtLayer(hero: .jinwoo, file: "igris.png")
-                    .offset(y: height * (1 - rise))
+                ArtworkContent(request: ArtworkRequest(hero: .jinwoo, file: "igris.png")) { art in
+                    if let art {
+                        Image(uiImage: art).resizable().scaledToFit()
+                            .shadow(color: Color(red: 0.59, green: 0.38, blue: 0.96).opacity(0.68),
+                                    radius: 2, x: 0, y: 1)
+                    }
+                }
+                .offset(y: height * (1 - rise))
+                .accessibilityHidden(true)
                 HStack(spacing: -4) {
                     Ellipse().fill(Color.purple)
                     Ellipse().fill(Color(red: 0.63, green: 0.57, blue: 0.72))
@@ -237,8 +282,34 @@ private struct ShadowArrival: AnimatableModifier {
     }
 }
 
+private struct JinwooPortalRim: View {
+    let phase: Double
+    let rim: Color
+
+    var body: some View {
+        Canvas { context, size in
+            // The arcs follow the existing transition and cost no idle frames.
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            for strand in 0..<3 {
+                let start = phase + Double(strand) * 2 * Double.pi / 3
+                var arc = Path()
+                for step in 0...28 {
+                    let u = Double(step) / 28
+                    let angle = start + u * 1.7 * Double.pi
+                    let radius = 0.68 + 0.29 * u
+                    let point = CGPoint(x: center.x * CGFloat(1 + radius * cos(angle)),
+                                        y: center.y * CGFloat(1 + radius * sin(angle)))
+                    if step == 0 { arc.move(to: point) } else { arc.addLine(to: point) }
+                }
+                context.stroke(arc, with: .color(.purple.opacity(0.55)), lineWidth: 4)
+                context.stroke(arc, with: .color(rim.opacity(0.9)), lineWidth: 1)
+            }
+        }
+    }
+}
+
 /// A single side change drives both gates. At rest only the occupied slot is visible.
-private struct PortalGate: AnimatableModifier {
+struct PortalGate: AnimatableModifier {
     let hero: Hero
     let arriving: Bool
     let rightSide: Bool
@@ -266,6 +337,8 @@ private struct PortalGate: AnimatableModifier {
                     if hero == .maomao {
                         Ellipse().inset(by: 5).stroke(rim.opacity(0.8), lineWidth: 1)
                             .rotationEffect(.degrees(-8))
+                    } else if hero == .jinwoo {
+                        JinwooPortalRim(phase: departure * .pi * (rightSide ? 1 : -1), rim: rim)
                     }
                 }
                 .padding(7)
@@ -380,15 +453,15 @@ struct CompanionScene: View {
     private var shown: Reaction { display ?? state.reaction(using: pack) }
     private var featuredArt: Bool { state.hero == .gojo || state.hero == .maomao }
 
-    private var speech: some View {
-        let pointsRight = state.hero == .maomao && state.contact?.portalOnRight == true
-        return Text(shown.text)
+    private func speech(pointsRight: Bool) -> some View {
+        Text(shown.text)
             .font(.callout)
             .foregroundStyle(.black)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(8)
             .background(.white, in: RoundedRectangle(cornerRadius: 12))
             .background(alignment: pointsRight ? .trailing : .leading) {
-                if featuredArt && !typeSize.isAccessibilitySize {
+                if !typeSize.isAccessibilitySize {
                     Rectangle().fill(.white)
                         .frame(width: 11, height: 11)
                         .rotationEffect(.degrees(45))
@@ -399,19 +472,22 @@ struct CompanionScene: View {
 
     var body: some View {
         let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout(spacing: 12))
-        let figure = CompanionFigure(hero: state.hero, portrait: portrait, emotion: shown.emotion, daytimePose: shown.daytimePose)
+        let mortar = state.hero == .maomao && state.mode == .normal && pack?.byID[shown.id]?.behaviorID == "mortar"
+        let figure = CompanionFigure(hero: state.hero, portrait: portrait, emotion: shown.emotion, daytimePose: shown.daytimePose,
+                                     apothecaryMortar: mortar)
             .frame(maxWidth: 148).frame(height: 168)
             .scaleEffect(featuredArt && !typeSize.isAccessibilitySize ? 1.12 : 1)
+        let fullMotion = !portrait && state.mode == .normal && state.animationsEnabled && !reduceMotion && !typeSize.isAccessibilitySize
+        let descriptor = fullMotion ? pack?.animation(for: .app, reactionID: shown.id) : nil
+        let portalOnRight = descriptor?.id == .portal && state.contact?.portalOnRight == true
         let caption = VStack(alignment: .leading, spacing: 6) {
             Text(state.hero.name).font(.headline)
             Text(shown.action).font(.caption)
-            if !shown.text.isEmpty { speech }
+            if !shown.text.isEmpty { speech(pointsRight: portalOnRight) }
         }
-        let fullMotion = !portrait && state.mode == .normal && state.animationsEnabled && !reduceMotion && !typeSize.isAccessibilitySize
-        let descriptor = fullMotion ? pack?.animations[.app] : nil
         return Group {
             if let descriptor, descriptor.id == .portal {
-                CompanionPortalScene(hero: state.hero, right: state.contact?.portalOnRight ?? false,
+                CompanionPortalScene(hero: state.hero, right: portalOnRight,
                                      duration: descriptor.duration, figure: figure, caption: caption)
             } else {
                 layout {
@@ -471,13 +547,29 @@ struct CompanionFigure: View {
     var emotion: ChibiEmotion = .neutral
     var daytimePose = false
     var pixels = 512
+    var apothecaryMortar = false
     @Environment(\.scenePack) private var pack
 
     var body: some View {
         ArtworkContent(request: .figure(hero, portrait: portrait, emotion: emotion, daytime: daytimePose, pixels: pixels)) { illustration in
             if let illustration {
                 Image(uiImage: illustration).resizable().scaledToFit().accessibilityHidden(true)
+                    .rotationEffect(.degrees(emotion == .frowning ? -5 : 0))
+                    .brightness(emotion == .frowning ? -0.08 : 0)
             } else { fallback }
+        }.overlay {
+            if apothecaryMortar {
+                ApothecaryMortar(inScene: true).accessibilityHidden(true).allowsHitTesting(false)
+            }
+        }.overlay(alignment: .topTrailing) {
+            if emotion == .frowning {
+                Image(systemName: "moon.zzz.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(5)
+                    .background(.black.opacity(0.75), in: Circle())
+                    .accessibilityHidden(true)
+            }
         }
     }
 
@@ -536,9 +628,47 @@ struct CompanionFigure: View {
             oval(67, 57, 10, 4, .pink.opacity(0.45))
             var smile = Path()
             smile.move(to: CGPoint(x: 44,y: 61))
-            smile.addQuadCurve(to: CGPoint(x: 55,y: 61), control: CGPoint(x: 50,y: 69))
+            smile.addQuadCurve(to: CGPoint(x: 55,y: 61), control: CGPoint(x: 50,y: emotion == .frowning ? 55 : 69))
             context.stroke(smile, with: .color(ink), lineWidth: 2)
         }.accessibilityHidden(true)
+    }
+}
+
+struct ApothecaryMortar: View {
+    static let findID = "maomao_find_3"
+    var inScene = false
+
+    var body: some View {
+        Canvas { context, size in
+            let scale = min(size.width, size.height) / (inScene ? 100 : 44)
+            context.translateBy(x: size.width * 0.50 + scale * (inScene ? 12 : 0),
+                                y: size.height * 0.50 + scale * (inScene ? 16 : -1))
+            context.scaleBy(x: scale, y: scale)
+            let outline = Color(red: 0.22, green: 0.15, blue: 0.09)
+            let ceramic = Color(red: 0.76, green: 0.55, blue: 0.29)
+            let rim = Color(red: 0.96, green: 0.78, blue: 0.49)
+            let bowl = Path { path in
+                path.move(to: CGPoint(x: -17, y: 4))
+                path.addQuadCurve(to: CGPoint(x: -10, y: 18), control: CGPoint(x: -15, y: 14))
+                path.addQuadCurve(to: CGPoint(x: 10, y: 18), control: CGPoint(x: 0, y: 23))
+                path.addQuadCurve(to: CGPoint(x: 17, y: 4), control: CGPoint(x: 15, y: 14))
+                path.closeSubpath()
+            }
+            context.fill(bowl, with: .color(ceramic))
+            context.stroke(bowl, with: .color(outline), lineWidth: 1.4)
+            let opening = Path(ellipseIn: CGRect(x: -17, y: -2, width: 34, height: 12))
+            context.fill(opening, with: .color(outline))
+            context.stroke(opening, with: .color(rim), lineWidth: 2)
+            for leaf in [CGRect(x: -10, y: 3, width: 8, height: 4), CGRect(x: -4, y: 1, width: 9, height: 5)] {
+                context.fill(Path(ellipseIn: leaf), with: .color(Color(red: 0.50, green: 0.65, blue: 0.29)))
+            }
+            let pestle = Path { path in
+                path.move(to: CGPoint(x: 2, y: 4))
+                path.addLine(to: CGPoint(x: 14, y: -14))
+            }
+            context.stroke(pestle, with: .color(outline), style: StrokeStyle(lineWidth: 9, lineCap: .round))
+            context.stroke(pestle, with: .color(rim), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+        }
     }
 }
 

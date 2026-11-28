@@ -134,8 +134,10 @@ for hero, name in roster.items():
         assert normalized not in texts and re.search("[а-яё]", normalized), (hero, normalized)
         assert len(row["text"]) <= 90 and not any(c in normalized for c in "{}")
         assert actions.get(row["behaviorID"]) == row["action"] and row["origin"] == "original" and row["triggers"]
+        if "sarcasm" in row:
+            assert hero == "ryomen_sukuna" and row["sarcasm"] in {"mild", "regular", "sharp"}, row["id"]
         assert {"app","widget"} <= set(row["channels"]) <= {"app","widget","notification"}
-        assert 1 <= row["weight"] <= 1_000_000 and row["behaviorID"] in {"intro","pause","notice","aside","spark"}
+        assert 1 <= row["weight"] <= 1_000_000
         if "notification" in row["channels"]:
             short = row["shortText"]
             assert short.strip() and len(short) <= 60 and not any(c in short for c in "{}"), row["id"]

@@ -25,6 +25,39 @@ final class CompanionTests: XCTestCase {
         XCTAssertTrue(state.handle([event], at: date, calendar: utc, using: &rng))
     }
 
+    func testSceneContextChoosesEachHeroLineOnlyWhileFresh() throws {
+        let night = noon.addingTimeInterval(11 * 3600)
+        var sunnyLines = Set<String>()
+        var bedtimeLines = Set<String>()
+        for hero in Hero.allCases {
+            var state = Companion()
+            state.hero = hero
+            let pack = try XCTUnwrap(hero.pack)
+            state.sceneWeather = SceneWeather(isSunny: true, observedAt: noon)
+            state = try JSONDecoder().decode(Companion.self, from: JSONEncoder().encode(state))
+            for channel in ["app", "widget"] {
+                let sunny = DayTimeline.display(state, at: noon, calendar: utc, channel: channel, using: pack)
+                XCTAssertEqual(sunny.emotion, .happy)
+                XCTAssertEqual(sunny.id, "context-sunny")
+                sunnyLines.insert(sunny.text)
+                let stale = DayTimeline.display(state, at: noon.addingTimeInterval(90 * 60), calendar: utc, channel: channel, using: pack)
+                XCTAssertNotEqual(stale.id, sunny.id)
+                let bedtime = DayTimeline.display(state, at: night, calendar: utc, channel: channel, using: pack, nightScreenTimeAt: night)
+                XCTAssertEqual(bedtime.emotion, .frowning)
+                bedtimeLines.insert(bedtime.text)
+                for event in [nil, night.addingTimeInterval(-20 * 60), night.addingTimeInterval(1)] as [Date?] {
+                    let ordinary = DayTimeline.display(state, at: night, calendar: utc, channel: channel, using: pack, nightScreenTimeAt: event)
+                    XCTAssertEqual(ordinary.emotion, .sleepy)
+                }
+            }
+            state.mode = .paused
+            XCTAssertNotEqual(DayTimeline.display(state, at: night, calendar: utc, using: pack, nightScreenTimeAt: night).id, "context-bedtime")
+        }
+        XCTAssertEqual(sunnyLines.count, Hero.allCases.count)
+        XCTAssertEqual(bedtimeLines.count, Hero.allCases.count)
+        XCTAssertTrue(bedtimeLines.allSatisfy { $0.contains("спать") })
+    }
+
     func testPortalSideSurvivesReloadAndIsIndependentPerHero() throws {
         var state = Companion()
         for hero in [Hero.jinwoo, .maomao] {
@@ -107,6 +140,88 @@ final class CompanionTests: XCTestCase {
             XCTAssertEqual(recovered.energy, 70)
             XCTAssertEqual(recovered.curiosity, 50)
             XCTAssertEqual(state.activity(at: noon.addingTimeInterval(-30)), state.activity(at: noon))
+        }
+    }
+
+    func testHeroIntroductionsAndRapidTapsUseTheirOwnDialogue() throws {
+        for hero in Hero.allCases {
+            let pack = try XCTUnwrap(hero.pack)
+            for opening in [CompanionEvent.Kind.appOpened, .characterSelected] {
+                var state = Companion()
+                state.hero = hero
+                state.mode = .eco
+                XCTAssertTrue(state.appContact(opening, at: noon, calendar: utc))
+                XCTAssertEqual(state.reaction.id, "intro")
+                for source in [CompanionEvent.Source.app, .widgetIntent] {
+                    state.react(at: noon.addingTimeInterval(1), calendar: utc, source: source)
+                    let reply = try XCTUnwrap(pack.byID[state.reaction.id])
+                    XCTAssertTrue(reply.triggers.contains("repeatInteraction"))
+                    XCTAssertTrue(reply.channels.contains(source == .app ? "app" : "widget"))
+                }
+            }
+        }
+    }
+
+    func testRareObservationsRemainAvailableBetweenCollectibleFinds() throws {
+        for hero in Hero.allCases {
+            var state = Companion()
+            state.hero = hero
+            let pack = try XCTUnwrap(hero.pack)
+            XCTAssertTrue(state.discover(at: noon))
+            var rng = SeededGenerator()
+            var observed = Set<String>()
+            for index in 1...400 {
+                let date = noon.addingTimeInterval(Double(index * 3))
+                let event = CompanionEvent(id: UUID(), source: .app, kind: .appInteraction, date: date)
+                XCTAssertTrue(state.handle([event], at: date, calendar: utc, using: &rng))
+                if pack.byID[state.reaction.id]?.category == "rare" { observed.insert(state.reaction.id) }
+            }
+            XCTAssertEqual(observed, Set(pack.records.filter { $0.category == "rare" }.map(\.id))
+                .subtracting(pack.finds.map(\.lineID)))
+            XCTAssertEqual(state.unlocks.count, 1)
+        }
+    }
+
+    func testSukunaSarcasmAcrossSurfacesAndOldSnapshots() throws {
+        let old = Data(#"{"mode":"Обычный","hero":"ryomen_sukuna","histories":{}}"#.utf8)
+        let original = try JSONDecoder().decode(Companion.self, from: old)
+        XCTAssertEqual(original.sukunaSarcasm, .regular)
+        let pack = try XCTUnwrap(original.hero.pack)
+        for tone in SukunaSarcasm.allCases {
+            var state = original
+            state.sukunaSarcasm = tone
+            state.mode = .eco
+            XCTAssertEqual(try JSONDecoder().decode(Companion.self, from: JSONEncoder().encode(state)), state)
+            var rng = SeededGenerator()
+            var seen = Set<SukunaSarcasm>()
+            for index in 0..<180 {
+                let date = noon.addingTimeInterval(Double(index * 3))
+                let widget = index.isMultiple(of: 2)
+                let event = CompanionEvent(id: UUID(), source: widget ? .widgetIntent : .app,
+                                           kind: widget ? .widgetInteraction : .appInteraction, date: date)
+                XCTAssertTrue(state.handle([event], at: date, calendar: utc, using: &rng))
+                let row = try XCTUnwrap(pack.byID[state.reaction.id])
+                XCTAssertTrue(tone.permits(row))
+                seen.insert(row.sarcasm ?? .mild)
+            }
+            XCTAssertEqual(seen.contains(.sharp), tone == .sharp)
+            XCTAssertEqual(seen.contains(.regular), tone != .mild)
+            state.contact = Contact(hero: .sukuna, date: noon, response: "ryomen_sukuna_tap_014")
+            state.mode = .safe
+            let saved = DayTimeline.display(state, at: noon, calendar: utc, channel: "widget")
+            XCTAssertEqual(saved.id == state.contact?.response, tone == .sharp)
+
+            var plan = CompanionNoticePlan(morning: 480, bedtime: 1365, quietStart: 23, quietEnd: 7)
+            plan.sukunaSarcasm = tone
+            let allowed = Set(pack.records.filter(tone.permits).map { $0.shortText ?? $0.text })
+            let slots = plan.slots(hero: .sukuna, now: noon, calendar: utc)
+            XCTAssertFalse(slots.isEmpty)
+            XCTAssertTrue(slots.allSatisfy { allowed.contains($0.body) })
+            state.resetPreferences()
+            XCTAssertEqual(state.sukunaSarcasm, .regular)
+        }
+        for hero in Hero.allCases where hero != .sukuna {
+            XCTAssertTrue(try XCTUnwrap(hero.pack).records.allSatisfy { $0.sarcasm == nil })
         }
     }
 
@@ -218,7 +333,8 @@ final class CompanionTests: XCTestCase {
             let bytes = try JSONSerialization.data(withJSONObject: ["mode": mode.rawValue, "line": 2])
             var state = try JSONDecoder().decode(Companion.self, from: bytes)
             XCTAssertEqual(state.hero, .gojo)
-            XCTAssertEqual(state.reaction.text, "Один шаг сделан. Следующий подождёт.")
+            XCTAssertEqual(state.reaction.id, "notice")
+            XCTAssertEqual(state.reaction.text, try XCTUnwrap(Hero.gojo.pack?.byID["notice"]?.text))
             let before = state
             state.react()
             XCTAssertEqual(state, before)

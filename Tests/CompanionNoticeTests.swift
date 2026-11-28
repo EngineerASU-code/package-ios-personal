@@ -9,6 +9,26 @@ final class CompanionNoticeTests: XCTestCase {
         return value
     }
 
+    func testOptedInSupportUsesOnlySupportLinesForEveryHero() throws {
+        let now = calendar.date(from: DateComponents(year: 2026, month: 11, day: 28))!
+        var plan = CompanionNoticePlan(morning: nil, bedtime: nil, quietStart: 23, quietEnd: 7)
+        plan.sukunaSarcasm = .mild
+        plan.communicationIntensity = .restrained
+        for hero in Hero.allCases {
+            plan.support = false
+            XCTAssertTrue(plan.slots(hero: hero, now: now, calendar: calendar).isEmpty)
+            let pack = try XCTUnwrap(hero.pack)
+            let support = pack.records.filter { $0.category == "support" && $0.channels.contains("notification") }
+            XCTAssertEqual(support.count, 3)
+            plan.support = true
+            let slots = plan.slots(hero: hero, now: now, calendar: calendar)
+            XCTAssertFalse(slots.isEmpty, hero.name)
+            XCTAssertTrue(slots.allSatisfy { slot in
+                slot.category == "companion.support" && support.contains { $0.shortText == slot.body }
+            })
+        }
+    }
+
     func testBudgetOptInQuietAndStableContent() {
         let now = calendar.date(from: DateComponents(year: 2026, month: 11, day: 27))!
         var plan = CompanionNoticePlan(morning: nil, bedtime: nil, quietStart: 23, quietEnd: 7)

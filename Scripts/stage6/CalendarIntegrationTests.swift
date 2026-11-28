@@ -1,9 +1,35 @@
 import EventKit
+import UIKit
 import XCTest
 import UserNotifications
 @testable import MyCompanion
 
 final class CalendarIntegrationTests: XCTestCase {
+    @MainActor func testGiftNoticeArtworkUsesCatalogSymbolAndFallsBackWhenMissing() throws {
+        let pack = try XCTUnwrap(Hero.maomao.pack)
+        let find = try XCTUnwrap(pack.finds.first { $0.id == "maomao_find_1" })
+        let artwork = try XCTUnwrap(GiftNoticeArtwork.make(for: find))
+        defer { try? FileManager.default.removeItem(at: artwork.directory) }
+        XCTAssertEqual(artwork.attachment.identifier, GiftNoticeArtwork.attachmentID)
+        let image = try XCTUnwrap(UIImage(contentsOfFile: artwork.attachment.url.path))
+        XCTAssertEqual(image.cgImage?.width, 128)
+        XCTAssertEqual(image.cgImage?.height, 128)
+        XCTAssertNil(GiftNoticeArtwork.make(symbol: "companion.missing.symbol"))
+    }
+
+    @MainActor func testGiftNoticeArtworkRendersTheMortarForItsStableFindID() throws {
+        let pack = try XCTUnwrap(Hero.maomao.pack)
+        let find = try XCTUnwrap(pack.finds.first { $0.id == "maomao_find_3" })
+        let mortar = try XCTUnwrap(GiftNoticeArtwork.make(for: find))
+        defer { try? FileManager.default.removeItem(at: mortar.directory) }
+        let ordinary = try XCTUnwrap(GiftNoticeArtwork.make(symbol: find.assetID))
+        defer { try? FileManager.default.removeItem(at: ordinary.directory) }
+        let image = try XCTUnwrap(UIImage(contentsOfFile: mortar.attachment.url.path))
+        XCTAssertEqual(image.cgImage?.width, 128)
+        XCTAssertEqual(image.cgImage?.height, 128)
+        XCTAssertNotEqual(try Data(contentsOf: mortar.attachment.url), try Data(contentsOf: ordinary.attachment.url))
+    }
+
     func testRepeatedIntentCannotSnoozeOrCompleteANewerRevision() async throws {
         let store = try Store.shared()
         let task = LocalReminder(title: "Проверка команды", dueAt: Date().addingTimeInterval(3600), revision: 1)
@@ -31,11 +57,33 @@ final class CalendarIntegrationTests: XCTestCase {
 
     func testSystemDeliveredReminder() async throws {
         let center = UNUserNotificationCenter.current()
-        let delivered = await center.deliveredNotifications()
-        let item = try XCTUnwrap(delivered.first { $0.request.identifier == "mycompanion.preview" })
-        XCTAssertEqual(item.request.content.body, "Время для небольшой передышки.")
+        let authorization = await center.notificationSettings().authorizationStatus
+        guard authorization == .authorized || authorization == .provisional else {
+            throw XCTSkip("Проверка системной доставки требует разрешения уведомлений на симуляторе.")
+        }
+        let identifier = "mycompanion.test.delivery." + UUID().uuidString
+        defer {
+            center.removePendingNotificationRequests(withIdentifiers: [identifier])
+            center.removeDeliveredNotifications(withIdentifiers: [identifier])
+        }
+        let content = UNMutableNotificationContent()
+        content.title = "Мой Компаньон"
+        content.body = "Время для небольшой передышки."
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 3, repeats: false)
+        try await center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
+        let initialPending = await center.pendingNotificationRequests()
+        XCTAssertTrue(initialPending.contains { $0.identifier == identifier })
+        let deadline = ContinuousClock.now + .seconds(20)
+        var delivered: UNNotification?
+        while ContinuousClock.now < deadline {
+            delivered = await center.deliveredNotifications().first { $0.request.identifier == identifier }
+            if delivered != nil { break }
+            try await Task.sleep(for: .milliseconds(200))
+        }
+        let item = try XCTUnwrap(delivered)
+        XCTAssertEqual(item.request.content.body, content.body)
         let pending = await center.pendingNotificationRequests()
-        XCTAssertFalse(pending.contains { $0.identifier == item.request.identifier })
+        XCTAssertFalse(pending.contains { $0.identifier == identifier })
     }
 
     @MainActor func testSnapshotPrivacyAndWithdrawal() async throws {
@@ -51,6 +99,11 @@ final class CalendarIntegrationTests: XCTestCase {
         defer { try? store.remove(event, span: .thisEvent) }
 
         let settings = UserDefaults.standard
+        let originalPreferences = ["calendarEnabled", "calendarTitles"].map { ($0, settings.object(forKey: $0)) }
+        addTeardownBlock {
+            for (key, value) in originalPreferences { settings.set(value, forKey: key) }
+            await service.refresh()
+        }
         settings.set(true, forKey: "calendarEnabled")
         settings.set(false, forKey: "calendarTitles")
         await service.refresh()

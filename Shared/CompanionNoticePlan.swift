@@ -90,9 +90,11 @@ struct CompanionNoticePlan {
     var gift: Unlock? = nil
     var daySchedule = DaySchedule()
     var communicationIntensity = CommunicationIntensity.standard
+    var sukunaSarcasm = SukunaSarcasm.regular
 
     func slots(hero: Hero, now: Date, calendar: Calendar) -> [CompanionNoticeSlot] {
         guard let pack = hero.pack else { return [] }
+        let noticeRows = pack.records.filter { $0.channels.contains("notification") && sukunaSarcasm.permits($0) }
         var slots: [CompanionNoticeSlot] = []
         let today = calendar.startOfDay(for: now)
         for offset in 0..<3 {
@@ -114,7 +116,7 @@ struct CompanionNoticePlan {
                 let id = "companion.\(category).\(key)"
                 let seed = (id + hero.rawValue).utf8.reduce(UInt64(14695981039346656037)) { ($0 ^ UInt64($1)) &* 1099511628211 }
                 let trigger = isMorning ? "scheduledGreeting" : "bedtimeReminder"
-                guard let line = CharacterPack.notificationLine(in: pack.records, trigger: trigger, facts: [], slot: seed,
+                guard let line = CharacterPack.notificationLine(in: noticeRows, trigger: trigger, facts: [], slot: seed,
                                                                 mood: pack.disposition.defaultMood, intensity: pack.personality.intensity,
                                                                 period: daySchedule.period(hour: hour),
                                                                 communicationIntensity: communicationIntensity) else { continue }
@@ -133,7 +135,8 @@ struct CompanionNoticePlan {
             } else if support && [3, 5, 7].contains(calendar.component(.weekday, from: date)) {
                 let key = CompanionNoticeLedger.day(date, calendar: calendar)
                 let seed = UInt64(key)
-                if let line = CharacterPack.notificationLine(in: pack.records, trigger: "randomSlot", facts: [], slot: seed,
+                if let line = CharacterPack.notificationLine(in: noticeRows.filter { $0.category == "support" },
+                                                            trigger: "supportNotice", facts: [], slot: seed,
                                                             mood: pack.disposition.defaultMood, intensity: pack.personality.intensity,
                                                             period: daySchedule.period(hour: hour), communicationIntensity: communicationIntensity) {
                     slots.append(.init(id: "companion.support.\(key)", category: "companion.support",

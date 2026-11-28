@@ -12,6 +12,26 @@ enum PassivePhraseFrequency: String, Codable, CaseIterable {
     case regular = "Обычная", reduced = "Реже", off = "Только по делу"
 }
 
+enum SukunaSarcasm: String, Codable, CaseIterable {
+    case mild, regular, sharp
+
+    var label: String {
+        switch self {
+        case .mild: return "Мягкий"
+        case .regular: return "Обычный"
+        case .sharp: return "Резкий"
+        }
+    }
+
+    func permits(_ row: CharacterPack.Record) -> Bool {
+        switch row.sarcasm {
+        case nil, .mild: return true
+        case .regular: return self != .mild
+        case .sharp: return self == .sharp
+        }
+    }
+}
+
 enum CommunicationIntensity: String, Codable, CaseIterable {
     case standard = "Характер героя", restrained = "Сдержанная"
 
@@ -22,7 +42,7 @@ enum CommunicationIntensity: String, Codable, CaseIterable {
     }
 }
 
-enum ChibiEmotion: String { case neutral, happy, sleepy, surprised }
+enum ChibiEmotion: String { case neutral, happy, sleepy, surprised, frowning }
 
 struct Reaction {
     var daytimePose = false
@@ -102,6 +122,17 @@ final class CharacterPack {
     }
     private struct AnimationFile: Decodable { let transitions: [AnimationDescriptor] }
     let animations: [AnimationDescriptor.Surface: AnimationDescriptor]
+
+    func animation(for surface: AnimationDescriptor.Surface, reactionID: String) -> AnimationDescriptor? {
+        guard let descriptor = animations[surface] else { return nil }
+        switch descriptor.id {
+        case .fan: return byID[reactionID]?.behaviorID == "notice" ? descriptor : nil
+        case .spirit: return byID[reactionID]?.behaviorID == "spiritBlade" ? descriptor : nil
+        case .expression: return byID[reactionID]?.behaviorID == "nightRest" ? nil : descriptor
+        default: return descriptor
+        }
+    }
+
     struct Theme: Decodable { let accent, symbol: String }
     struct Disposition: Decodable {
         let defaultMood, recovery: String
@@ -133,6 +164,8 @@ final class CharacterPack {
     struct Personality: Decodable {
         let intensity: String
         var voice: String?
+        var sunnyLine: String?
+        var bedtimeLine: String?
     }
     let personality: Personality
     let disposition: Disposition
@@ -154,6 +187,7 @@ final class CharacterPack {
         }
         var behaviorID: String? = nil
         var intensity: String? = nil
+        var sarcasm: SukunaSarcasm? = nil
         var emotions: [String]? = nil
         var variables: [String]? = nil
         var cooldownSeconds: Int? = nil
@@ -478,11 +512,13 @@ struct Companion: Codable, Equatable {
     var calendarNoticeJournal: CalendarNoticeJournal?
     var mode = CompanionMode.normal
     var daySchedule = DaySchedule()
+    var sceneWeather: SceneWeather?
     var animationsEnabled = true
     var randomEventsEnabled = true
     var complimentFrequency = ComplimentFrequency.regular
     var passivePhraseFrequency = PassivePhraseFrequency.regular
     var communicationIntensity = CommunicationIntensity.standard
+    var sukunaSarcasm = SukunaSarcasm.regular
     var complimentsOnlyInWidget = false
 
     func allowsCompliments(on channel: String) -> Bool {
@@ -518,6 +554,7 @@ struct Companion: Codable, Equatable {
         complimentFrequency = defaults.complimentFrequency
         passivePhraseFrequency = defaults.passivePhraseFrequency
         communicationIntensity = defaults.communicationIntensity
+        sukunaSarcasm = defaults.sukunaSarcasm
         complimentsOnlyInWidget = defaults.complimentsOnlyInWidget
     }
 
@@ -554,7 +591,8 @@ struct Companion: Codable, Equatable {
         case complimentFrequency, complimentsOnlyInWidget, daySchedule, animationsEnabled, randomEventsEnabled
         case personalNoticeJournal, calendarNoticeJournal
         case recentEventIDs
-        case passivePhraseFrequency, communicationIntensity
+        case passivePhraseFrequency, communicationIntensity, sukunaSarcasm
+        case sceneWeather
     }
     private enum LegacyKeys: String, CodingKey { case line, contact }
     init(from decoder: Decoder) throws {
@@ -563,6 +601,7 @@ struct Companion: Codable, Equatable {
         events = try fields.decodeIfPresent([UUID: Date].self, forKey: .events) ?? [:]
         recentEventIDs = Array((try fields.decodeIfPresent([UUID].self, forKey: .recentEventIDs) ?? []).suffix(128))
         calendarSnapshot = try fields.decodeIfPresent(CalendarSnapshot.self, forKey: .calendarSnapshot) ?? CalendarSnapshot()
+        sceneWeather = try fields.decodeIfPresent(SceneWeather.self, forKey: .sceneWeather)
         personalNoticeJournal = try fields.decodeIfPresent(PersonalNoticeJournal.self, forKey: .personalNoticeJournal)
         calendarNoticeJournal = try fields.decodeIfPresent(CalendarNoticeJournal.self, forKey: .calendarNoticeJournal)
         mode = try fields.decode(CompanionMode.self, forKey: .mode)
@@ -573,6 +612,7 @@ struct Companion: Codable, Equatable {
         complimentFrequency = try fields.decodeIfPresent(ComplimentFrequency.self, forKey: .complimentFrequency) ?? .regular
         passivePhraseFrequency = try fields.decodeIfPresent(PassivePhraseFrequency.self, forKey: .passivePhraseFrequency) ?? .regular
         communicationIntensity = try fields.decodeIfPresent(CommunicationIntensity.self, forKey: .communicationIntensity) ?? .standard
+        sukunaSarcasm = try fields.decodeIfPresent(SukunaSarcasm.self, forKey: .sukunaSarcasm) ?? .regular
         complimentsOnlyInWidget = try fields.decodeIfPresent(Bool.self, forKey: .complimentsOnlyInWidget) ?? false
         modeBeforePause = try fields.decodeIfPresent(CompanionMode.self, forKey: .modeBeforePause)
         reminders = try fields.decodeIfPresent([LocalReminder].self, forKey: .reminders) ?? []
@@ -743,8 +783,9 @@ struct Companion: Codable, Equatable {
             trigger = "repeatInteraction"
         } else if actualContact, let previous = state.lastInteractionAt, event.date.timeIntervalSince(previous) >= 86400 {
             trigger = "inactivityElapsed"
-        } else if tap && randomEventsEnabled && mode == .normal && Int.random(in: 0..<12, using: &rng) == 0,
-                availableFind(at: event.date) != nil { trigger = "easterEgg" }
+        } else if tap && randomEventsEnabled && mode == .normal && Int.random(in: 0..<12, using: &rng) == 0 {
+            trigger = availableFind(at: event.date) == nil ? "rareMoment" : "easterEgg"
+        }
         let channel = event.source == .widgetIntent ? "widget" : "app"
         let includeCompliments = allowsCompliments(on: channel) &&
             (complimentFrequency != .reduced || Int.random(in: 0..<3, using: &rng) == 0)
@@ -758,7 +799,8 @@ struct Companion: Codable, Equatable {
         func candidates(_ trigger: String) -> [CharacterPack.Record] {
             guard let pack else { return [] }
             return (pack.byTrigger[trigger] ?? []).filter { row in
-                guard (row.category != "compliment" || includeCompliments), communicationIntensity.permits(row, channel: channel),
+                guard (row.category != "compliment" || includeCompliments), sukunaSarcasm.permits(row),
+                      communicationIntensity.permits(row, channel: channel),
                       row.eligible(trigger: trigger, channel: channel, facts: facts, mood: state.mood,
                                    intensity: pack.personality.intensity, period: period, substitutions: substitutions),
                       let id = row.behaviorID, let action = pack.behaviors[id],
@@ -770,7 +812,7 @@ struct Companion: Codable, Equatable {
         }
         var choices = candidates(trigger)
         let repeated = trigger == "repeatInteraction"
-        if choices.isEmpty && repeated {
+        if choices.isEmpty && (repeated || trigger == "rareMoment") {
             trigger = channel == "widget" ? "widgetInteraction" : "appInteraction"
             choices = candidates(trigger)
         }
@@ -806,7 +848,7 @@ struct Companion: Codable, Equatable {
             }
             switch row.category {
             case "night": state.mood = "sleepy"
-            case "morning", "compliment": state.mood = "happy"
+            case "morning", "compliment", "return": state.mood = "happy"
             case "rare": state.mood = "surprised"
             default: state.mood = pack?.disposition.defaultMood ?? "neutral"
             }
